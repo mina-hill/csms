@@ -26,6 +26,11 @@ var auditLog     = [];
 var flockSeq=1, supSeq=3, morSeq=1, wtSeq=1, fsSeq=1, osSeq=1, ftSeq=1, mdSeq=1, bbSeq=1, expSeq=1, wkSeq=1, prSeq=1;
 var editTarget=null, closeTarget=null, viewTarget=null, supEditTarget=null, workerEditTarget=null;
 var EDITOR = 'Shed Manager';
+var API_BASE = '/api';
+
+function api(path, opts){
+  return fetch(API_BASE + path, opts || {});
+}
 
 // ════════════════════════════════════════════════════
 //  HELPERS
@@ -67,6 +72,54 @@ function normalizeSupplierType(t){
   return x;
 }
 suppliers.forEach(function(s){s.type=normalizeSupplierType(s.type);});
+
+function mapSupplierFromApi(s){
+  return {
+    id: s.id,
+    name: s.name || '',
+    type: normalizeSupplierType(s.supplierType || s.type),
+    contact: s.phone || s.contact || '',
+    address: s.address || '',
+    added: (s.createdAt || '').slice(0,10) || today(),
+    isActive: s.isActive !== false
+  };
+}
+
+function mapWorkerFromApi(w){
+  return {
+    id: w.id,
+    name: w.name || '',
+    role: w.role || '',
+    contact: w.contact || '',
+    join: w.joinDate || '',
+    salary: Number(w.salaryRate || 0),
+    status: w.isActive === false ? 'Inactive' : 'Active'
+  };
+}
+
+async function loadInitialData(){
+  try{
+    var supplierRes = await api('/suppliers');
+    if(supplierRes.ok){
+      var supplierData = await supplierRes.json();
+      suppliers = supplierData.map(mapSupplierFromApi);
+      supSeq = suppliers.length + 1;
+    }
+  }catch(_err){
+    toast('Using local supplier data (backend unavailable).','t-info');
+  }
+
+  try{
+    var workerRes = await api('/workers');
+    if(workerRes.ok){
+      var workerData = await workerRes.json();
+      workers = workerData.map(mapWorkerFromApi);
+      wkSeq = workers.length + 1;
+    }
+  }catch(_err){
+    toast('Using local worker data (backend unavailable).','t-info');
+  }
+}
 
 function daysBetween(start,end){
   if(!start||!end)return null;
@@ -573,17 +626,48 @@ $('btn-add-sup').addEventListener('click',function(){
   $('s-name').value='';$('s-type').value='';$('s-contact').value='';$('s-address').value='';
   inv('fg-sn',false);$('fg-sdup').style.display='none';openM('m-sup');
 });
-$('do-sup').addEventListener('click',function(){
+$('do-sup').addEventListener('click',async function(){
   var name=$('s-name').value.trim();
   inv('fg-sn',!name);if(!name)return;
   var dup=suppliers.find(function(s){return s.name.toLowerCase()===name.toLowerCase()&&s.id!==supEditTarget;});
   if(dup){$('fg-sdup').style.display='';return;}$('fg-sdup').style.display='none';
+  var payload = {
+    name:name,
+    phone:$('s-contact').value.trim(),
+    address:$('s-address').value.trim(),
+    supplierType:($('s-type').value||'').toUpperCase().split(' ')[0]
+  };
   if(supEditTarget){
     var sup=suppliers.find(function(s){return s.id===supEditTarget;});
-    sup.name=name;sup.type=$('s-type').value;sup.contact=$('s-contact').value.trim();sup.address=$('s-address').value.trim();
+    try{
+      var updateRes = await api('/suppliers/'+encodeURIComponent(supEditTarget),{
+        method:'PUT',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(payload)
+      });
+      if(!updateRes.ok){toast('Failed to update supplier in backend.','t-bad');return;}
+      var updatedSupplier = await updateRes.json();
+      sup = mapSupplierFromApi(updatedSupplier);
+      suppliers = suppliers.map(function(s0){return s0.id===supEditTarget?sup:s0;});
+    }catch(_err){
+      toast('Backend not reachable. Could not update supplier.','t-bad');
+      return;
+    }
     addLog('Supplier','Edited','Updated: '+name);toast('Supplier updated.','t-ok');
   } else {
-    suppliers.push({id:'SUP-'+String(supSeq++).padStart(3,'0'),name:name,type:$('s-type').value,contact:$('s-contact').value.trim(),address:$('s-address').value.trim(),added:today()});
+    try{
+      var createRes = await api('/suppliers',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(payload)
+      });
+      if(!createRes.ok){toast('Failed to add supplier in backend.','t-bad');return;}
+      var createdSupplier = await createRes.json();
+      suppliers.push(mapSupplierFromApi(createdSupplier));
+    }catch(_err){
+      toast('Backend not reachable. Could not add supplier.','t-bad');
+      return;
+    }
     addLog('Supplier','Added','New supplier: '+name);toast('Supplier added.','t-ok');
   }
   closeM('m-sup');renderSuppliers();renderDash();
@@ -1145,17 +1229,48 @@ $('btn-add-worker').addEventListener('click',function(){
   $('wk-name').value='';$('wk-role').value='';$('wk-contact').value='';$('wk-join').value=today();$('wk-salary').value='';$('wk-status').value='Active';
   ['fg-wk-n','fg-wk-r','fg-wk-s'].forEach(function(id){inv(id,false);});openM('m-worker');
 });
-$('do-worker').addEventListener('click',function(){
+$('do-worker').addEventListener('click',async function(){
   var name=$('wk-name').value.trim(),role=$('wk-role').value.trim(),salary=parseFloat($('wk-salary').value),ok=true;
   inv('fg-wk-n',!name);if(!name)ok=false;inv('fg-wk-r',!role);if(!role)ok=false;
   inv('fg-wk-s',!salary||salary<=0);if(!salary||salary<=0)ok=false;if(!ok)return;
   var wid=$('worker-edit-id').value;
+  var payload = {
+    name:name,
+    role:role,
+    contact:$('wk-contact').value.trim(),
+    joinDate:$('wk-join').value || today(),
+    salaryRate:salary,
+    isActive:$('wk-status').value === 'Active'
+  };
   if(wid){
-    var w=workers.find(function(x){return x.id===wid;});
-    if(w){w.name=name;w.role=role;w.contact=$('wk-contact').value.trim();w.salary=salary;w.status=$('wk-status').value;}
+    try{
+      var updateRes = await api('/workers/'+encodeURIComponent(wid),{
+        method:'PUT',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(payload)
+      });
+      if(!updateRes.ok){toast('Failed to update worker in backend.','t-bad');return;}
+      var updatedWorker = await updateRes.json();
+      workers = workers.map(function(w0){return w0.id===wid?mapWorkerFromApi(updatedWorker):w0;});
+    }catch(_err){
+      toast('Backend not reachable. Could not update worker.','t-bad');
+      return;
+    }
     addLog('Payroll','Worker Edited',name);toast('Worker updated.','t-ok');
   } else {
-    workers.push({id:'WK-'+String(wkSeq++).padStart(3,'0'),name:name,role:role,contact:$('wk-contact').value.trim(),join:$('wk-join').value,salary:salary,status:$('wk-status').value});
+    try{
+      var createRes = await api('/workers',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(payload)
+      });
+      if(!createRes.ok){toast('Failed to add worker in backend.','t-bad');return;}
+      var createdWorker = await createRes.json();
+      workers.push(mapWorkerFromApi(createdWorker));
+    }catch(_err){
+      toast('Backend not reachable. Could not add worker.','t-bad');
+      return;
+    }
     addLog('Payroll','Worker Added',name+' — '+role+' @ '+rupees(salary)+'/mo');toast('Worker added.','t-ok');
   }
   closeM('m-worker');renderPayroll();
@@ -1432,7 +1547,10 @@ function buildFeedReport(){
 // ════════════════════════════════════════════════════
 //  INIT
 // ════════════════════════════════════════════════════
-renderDash();
-renderSuppliers();
-// Pre-set report tab
-document.querySelector('[data-rtab="mortality"]').classList.add('on');
+loadInitialData().then(function(){
+  renderDash();
+  renderSuppliers();
+  renderPayroll();
+  // Pre-set report tab
+  document.querySelector('[data-rtab="mortality"]').classList.add('on');
+});
