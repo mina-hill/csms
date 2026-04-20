@@ -1,5 +1,6 @@
 package com.csms.csms.entity;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -41,10 +42,12 @@ public class FeedType {
     }
 
     // Getters & Setters
+    @JsonProperty("id")
     public UUID getFeedTypeId() {
         return feedTypeId;
     }
 
+    @JsonProperty("id")
     public void setFeedTypeId(UUID feedTypeId) {
         this.feedTypeId = feedTypeId;
     }

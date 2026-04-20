@@ -1,5 +1,6 @@
 package com.csms.csms.entity;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -22,6 +23,9 @@ public class Medicine {
     @Column(name = "current_stock", nullable = false)
     private Integer currentStock = 0;
 
+    @Column(name = "unit", length = 60)
+    private String unit;
+
     @Column(name = "last_updated", nullable = false, insertable = false, updatable = false)
     private OffsetDateTime lastUpdated;
 
@@ -41,10 +45,12 @@ public class Medicine {
     }
 
     // Getters & Setters
+    @JsonProperty("id")
     public UUID getMedicineId() {
         return medicineId;
     }
 
+    @JsonProperty("id")
     public void setMedicineId(UUID medicineId) {
         this.medicineId = medicineId;
     }
@@ -81,6 +87,14 @@ public class Medicine {
         this.lastUpdated = lastUpdated;
     }
 
+    public String getUnit() {
+        return unit;
+    }
+
+    public void setUnit(String unit) {
+        this.unit = unit;
+    }
+
     @Override
     public String toString() {
         return "Medicine{" +
@@ -88,6 +102,7 @@ public class Medicine {
                 ", name='" + name + '\'' +
                 ", currentStock=" + currentStock +
                 ", minThreshold=" + minThreshold +
+                ", unit='" + unit + '\'' +
                 '}';
     }
 }

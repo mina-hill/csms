@@ -1,5 +1,6 @@
 package com.csms.csms.entity;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -70,7 +71,9 @@ public class Flock {
         this.status      = FlockStatus.ACTIVE;
     }
 
+    @JsonProperty("id")
     public UUID getFlockId()                         { return flockId; }
+    @JsonProperty("id")
     public void setFlockId(UUID v)                   { this.flockId = v; }
 
     public String getFlockCode()                     { return flockCode; }

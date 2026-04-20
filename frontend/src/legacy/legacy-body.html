@@ -846,11 +846,19 @@
     <div class="mh"><div><div class="mt">Process Payroll</div><div class="mt-sub">US-024 — Monthly salary ÷ 30 × days worked</div></div><button class="mx" data-close="m-payroll">×</button></div>
     <div class="mb">
       <div class="fr">
-        <div class="fg" id="fg-pr-s"><label class="fl">Start Date *</label><input class="fi" id="pr-start" type="date"><span class="ferr">Required</span></div>
+        <div class="fg" id="fg-pr-s"><label class="fl">Start Date (Worker Join Date)</label><input class="fi" id="pr-start" type="date" readonly><span class="ferr">Required</span></div>
         <div class="fg" id="fg-pr-e"><label class="fl">End Date *</label><input class="fi" id="pr-end" type="date"><span class="ferr">Required</span></div>
       </div>
       <div class="fr full">
-        <div class="fg" id="fg-pr-days"><label class="fl">Days Worked (total) *</label><input class="fi" id="pr-days" type="number" min="0" step="1" placeholder="e.g. 45"><span class="ferr">Required</span></div>
+        <div class="fg" id="fg-pr-days"><label class="fl">Days Worked (auto-calculated)</label><input class="fi" id="pr-days" type="number" min="0" step="1" placeholder="Auto" readonly><span class="ferr">Required</span></div>
+      </div>
+      <div class="fr full">
+        <div class="fg" id="fg-pr-workers">
+          <label class="fl">Select Worker *</label>
+          <div id="pr-worker-list" style="max-height:170px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px;background:var(--white)"></div>
+          <div class="fhint" id="pr-worker-hint"></div>
+          <span class="ferr">Select one worker</span>
+        </div>
       </div>
       <div id="payroll-preview" style="margin-top:8px"></div>
     </div>

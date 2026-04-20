@@ -16,13 +16,15 @@ var feedTxns     = [];   // {id,type,feedType,flock,buyer,qty,cost,date,time}
 var medStock     = {};   // {name:{qty,threshold,supplier,lastUpdated}}
 var medTxns      = [];   // {id,type,medicine,flock,sup,qty,cost,date,time}
 var dailyFeedRecords = []; // {id,flockId,date,feedType,daySacks,nightSacks,totalSacks,time,editor}
-var dailyMedRecords  = []; // {id,flockId,date,items:[{name,qty,unit,unitOther,usageTime}],notes,time,editor}
+var dailyMedRecords  = []; // {id,flockId,date,items:[{name,qty,unit,usageTime}],notes,time,editor}
 var bradaStock   = 0;
 var bradaTxns    = [];   // {id,type,flock,sup,qty,cost,date,time,balance}
 var expenses     = [];   // {id,cat,desc,units,rate,amount,date,flockId,time}
 var workers      = [];   // {id,name,role,contact,join,salary,status}
 var payrollRuns  = [];   // {id,month,year,workers:[{name,salary}],total,processedOn,status}
+var payrollSelectedWorkerId = '';
 var auditLog     = [];
+var flockLoadWarned = false, feedLoadWarned = false, medicineLoadWarned = false;
 var flockSeq=1, supSeq=3, morSeq=1, wtSeq=1, fsSeq=1, osSeq=1, ftSeq=1, mdSeq=1, bbSeq=1, expSeq=1, wkSeq=1, prSeq=1;
 var editTarget=null, closeTarget=null, viewTarget=null, supEditTarget=null, workerEditTarget=null;
 var EDITOR = 'Shed Manager';
@@ -116,6 +118,254 @@ function mapWorkerFromApi(w){
   };
 }
 
+function toArrayPayload(payload){
+  if(Array.isArray(payload)) return payload;
+  if(payload && Array.isArray(payload.content)) return payload.content;
+  if(payload && Array.isArray(payload.data)) return payload.data;
+  return [];
+}
+
+function normalizeFlockStatus(status){
+  var key = String(status || '').toUpperCase();
+  return key === 'CLOSED' ? 'Closed' : 'Active';
+}
+
+function mapFlockFromApi(f){
+  var supplier = suppliers.find(function(s){ return String(s.id) === String(f.supplierId); });
+  return {
+    id: String(f.flockCode || f.id || f.flockId || ''),
+    flockDbId: String(f.id || f.flockId || ''),
+    breed: f.breed || '',
+    qty: Number(f.currentQty != null ? f.currentQty : f.initialQty || 0),
+    origQty: Number(f.initialQty || 0),
+    arrivalDate: f.arrivalDate || '',
+    supplierName: supplier ? supplier.name : '',
+    supId: f.supplierId != null ? String(f.supplierId) : '',
+    notes: f.notes || '',
+    status: normalizeFlockStatus(f.status),
+    closeDate: f.closeDate || ''
+  };
+}
+
+function hydrateFeedStockFromApi(items){
+  var next = {};
+  (items || []).forEach(function(it){
+    if(!it || !it.name) return;
+    next[it.name] = {
+      id: String(it.id || it.feedTypeId || ''),
+      qty: Number(it.currentStock || 0),
+      threshold: Number(it.minThreshold != null ? it.minThreshold : 0),
+      lastPurchase: it.lastUpdated ? String(it.lastUpdated).slice(0,10) : null,
+      lastUsage: it.lastUpdated ? String(it.lastUpdated).slice(0,10) : null
+    };
+  });
+  feedStock = next;
+}
+
+function hydrateMedStockFromApi(items){
+  var next = {};
+  (items || []).forEach(function(it){
+    if(!it || !it.name) return;
+    next[it.name] = {
+      id: String(it.id || it.medicineId || ''),
+      qty: Number(it.currentStock || 0),
+      threshold: Number(it.minThreshold != null ? it.minThreshold : 0),
+      supplier: '',
+      supId: '',
+      lastUpdated: it.lastUpdated ? String(it.lastUpdated).slice(0,10) : null,
+      unit: it.unit || it.unitType || 'units'
+    };
+  });
+  medStock = next;
+}
+
+function uiOtherSaleCategoryToApi(cat){
+  var map = {
+    'Manure':'MANURE',
+    'Equipment':'EQUIPMENT',
+    'By-product':'BY_PRODUCT',
+    'Sacks Sale':'SACKS_SALE',
+    'Brada':'BRADA',
+    'Other':'OTHER'
+  };
+  return map[cat] || 'OTHER';
+}
+
+function apiOtherSaleCategoryToUi(cat){
+  var map = {
+    'MANURE':'Manure',
+    'EQUIPMENT':'Equipment',
+    'BY_PRODUCT':'By-product',
+    'SACKS_SALE':'Sacks Sale',
+    'BRADA':'Brada',
+    'OTHER':'Other'
+  };
+  var key = (cat || '').toUpperCase();
+  return map[key] || (cat || 'Other');
+}
+
+function mapOtherSaleFromApi(s){
+  return {
+    id: s.id,
+    date: s.saleDate,
+    category: apiOtherSaleCategoryToUi(s.category),
+    desc: s.description || '',
+    buyer: s.buyer || '',
+    amount: Number(s.amount || 0),
+    time: s.createdAt || now(),
+    editor: EDITOR
+  };
+}
+
+function mapPayrollReportFromApi(r){
+  return {
+    id: 'PR-' + String(r.periodYear) + '-' + String(r.periodMonth) + '-' + String(r.daysWorked || 0),
+    start: r.startDate,
+    end: r.endDate,
+    days: r.daysWorked,
+    workers: (r.workers || []).map(function(w){
+      return {
+        name: w.workerName,
+        role: w.role,
+        monthly: Number(w.monthlySalary || 0),
+        perDay: Number(w.dailyRate || 0),
+        days: w.daysWorked,
+        total: Number(w.amount || 0)
+      };
+    }),
+    total: Number(r.totalAmount || 0),
+    processedOn: r.processedAt ? new Date(r.processedAt).toLocaleString('en-GB') : now(),
+    status: r.status || 'Processed'
+  };
+}
+
+async function loadOtherSalesFromApi(){
+  try{
+    var res = await api('/other-sales');
+    if(!res.ok)return;
+    var dbSales = await res.json();
+    var mapped = dbSales.map(mapOtherSaleFromApi);
+    var localOnly = otherSales.filter(function(s){ return String(s.id||'').indexOf('OS-')===0; });
+    otherSales = mapped.concat(localOnly);
+  }catch(_err){
+    // Keep local state silently when backend is unavailable.
+  }
+}
+
+async function loadFlocksFromApi(){
+  try{
+    var res = await api('/flocks');
+    if(!res.ok){
+      if(!flockLoadWarned){
+        flockLoadWarned = true;
+        toast('Could not load flocks from backend ('+res.status+').','t-bad');
+      }
+      return;
+    }
+    var data = toArrayPayload(await res.json());
+    var mappedFlocks = data.map(mapFlockFromApi);
+    flocks = mappedFlocks;
+    flockSeq = flocks.length + 1;
+    flockLoadWarned = false;
+
+    // Sync flock audit trail from backend for existing flocks.
+    var remoteAudit = [];
+    for(var i=0;i<mappedFlocks.length;i++){
+      var f = mappedFlocks[i];
+      if(!f.flockDbId) continue;
+      try{
+        var ares = await api('/flocks/'+encodeURIComponent(f.flockDbId)+'/audit');
+        if(!ares.ok) continue;
+        var logs = toArrayPayload(await ares.json());
+        logs.forEach(function(log){
+          var action = 'Updated';
+          var newValues = String(log.newValues || '');
+          if(newValues.indexOf('"status":"CLOSED"') >= 0) action = 'Closed';
+          else if(!log.oldValues) action = 'Registered';
+          remoteAudit.push({
+            module:f.id,
+            action:action,
+            detail:newValues || 'Flock record changed.',
+            diff:[],
+            _ts: log.changedAt ? new Date(log.changedAt).getTime() : Date.now(),
+            time: log.changedAt ? new Date(log.changedAt).toLocaleString('en-GB') : now(),
+            editor: 'System'
+          });
+        });
+      }catch(_auditErr){
+        // Skip audit hydration if individual request fails.
+      }
+    }
+    if(remoteAudit.length){
+      remoteAudit.sort(function(a,b){ return (b._ts||0) - (a._ts||0); });
+      remoteAudit.forEach(function(e){ delete e._ts; });
+      var flockModules = {};
+      mappedFlocks.forEach(function(fm){ flockModules[String(fm.id)] = true; });
+      auditLog = remoteAudit.concat(auditLog.filter(function(e){ return !flockModules[String(e.module || '')]; }));
+    }
+  }catch(_err){
+    if(!flockLoadWarned){
+      flockLoadWarned = true;
+      toast('Backend unavailable: could not load flocks.','t-bad');
+    }
+  }
+}
+
+async function loadFeedTypesFromApi(){
+  try{
+    var res = await api('/feed-types');
+    if(!res.ok){
+      if(!feedLoadWarned){
+        feedLoadWarned = true;
+        toast('Could not load feed types from backend ('+res.status+').','t-bad');
+      }
+      return;
+    }
+    var data = toArrayPayload(await res.json());
+    hydrateFeedStockFromApi(data);
+    refreshFeedTypeSelects();
+    feedLoadWarned = false;
+  }catch(_err){
+    if(!feedLoadWarned){
+      feedLoadWarned = true;
+      toast('Backend unavailable: could not load feed inventory.','t-bad');
+    }
+  }
+}
+
+async function loadMedicinesFromApi(){
+  try{
+    var res = await api('/medicines');
+    if(!res.ok){
+      if(!medicineLoadWarned){
+        medicineLoadWarned = true;
+        toast('Could not load medicines from backend ('+res.status+').','t-bad');
+      }
+      return;
+    }
+    var data = toArrayPayload(await res.json());
+    hydrateMedStockFromApi(data);
+    refreshMedSelects();
+    medicineLoadWarned = false;
+  }catch(_err){
+    if(!medicineLoadWarned){
+      medicineLoadWarned = true;
+      toast('Backend unavailable: could not load medicine inventory.','t-bad');
+    }
+  }
+}
+
+async function loadPayrollRunsFromApi(){
+  try{
+    var res = await api('/payroll/report');
+    if(!res.ok)return;
+    var data = await res.json();
+    payrollRuns = data.map(mapPayrollReportFromApi);
+  }catch(_err){
+    // Keep local state silently when backend is unavailable.
+  }
+}
+
 async function loadInitialData(){
   try{
     var supplierRes = await api('/suppliers');
@@ -138,6 +388,12 @@ async function loadInitialData(){
   }catch(_err){
     toast('Using local worker data (backend unavailable).','t-info');
   }
+
+  await loadFlocksFromApi();
+  await loadFeedTypesFromApi();
+  await loadMedicinesFromApi();
+  await loadOtherSalesFromApi();
+  await loadPayrollRunsFromApi();
 }
 
 function daysBetween(start,end){
@@ -182,8 +438,8 @@ document.querySelectorAll('.nav-item').forEach(function(btn){
     btn.classList.add('on');
     var v=btn.getAttribute('data-view');
     $('view-'+v).classList.add('on');
-    var render={dashboard:renderDash,flocks:renderFlocks,daily:renderDaily,sales:renderSalesView,
-      feed:renderFeed,medicine:renderMedicine,brada:renderBrada,expenses:renderExpenses,
+    var render={dashboard:renderDash,flocks:function(){loadFlocksFromApi().then(renderFlocks);},daily:renderDaily,sales:function(){loadOtherSalesFromApi().then(renderSalesView);},
+      feed:function(){loadFeedTypesFromApi().then(renderFeed);},medicine:function(){loadMedicinesFromApi().then(renderMedicine);},brada:renderBrada,expenses:renderExpenses,
       payroll:renderPayroll,suppliers:renderSuppliers,audit:renderAudit};
     if(render[v])render[v]();
     if(v==='reports')renderReport(document.querySelector('.tab-pill.on[data-rtab]')&&document.querySelector('.tab-pill.on[data-rtab]').getAttribute('data-rtab')||'mortality');
@@ -280,7 +536,7 @@ $('btn-reg').addEventListener('click',function(){
   $('r-breed').value='';$('r-qty').value='';$('r-date').value=today();$('r-notes').value='';
   fillSupSelect('r-sup',['Chicks Supplier']);openM('m-reg');
 });
-$('do-reg').addEventListener('click',function(){
+$('do-reg').addEventListener('click',async function(){
   var breed=$('r-breed').value.trim(),qty=parseInt($('r-qty').value,10),date=$('r-date').value,supId=$('r-sup').value,notes=$('r-notes').value.trim();
   var ok=true;
   inv('fg-rb',!breed);if(!breed)ok=false;
@@ -288,11 +544,33 @@ $('do-reg').addEventListener('click',function(){
   inv('fg-rd',!date);if(!date)ok=false;
   inv('fg-rs',!supId);if(!supId)ok=false;
   if(!ok)return;
-  var sup=suppliers.find(function(s){return s.id===supId;});
-  var fid=nextFid();
-  flocks.unshift({id:fid,breed:breed,qty:qty,origQty:qty,arrivalDate:date,supplierName:sup.name,supId:supId,notes:notes,status:'Active'});
-  addLog(fid,'Registered','Breed: '+breed+', Qty: '+qty+', Supplier: '+sup.name);
-  closeM('m-reg');toast('Flock '+fid+' registered!','t-ok');
+  var sup=suppliers.find(function(s){return String(s.id)===String(supId);});
+  try{
+    var createRes = await api('/flocks',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        breed:breed,
+        initialQty:qty,
+        arrivalDate:date,
+        supplierId:supId,
+        notes:notes,
+        createdBy:null
+      })
+    });
+    if(!createRes.ok){
+      toast('Failed to register flock in backend.','t-bad');
+      return;
+    }
+    var createdFlock = await createRes.json();
+    await loadFlocksFromApi();
+    var mapped = mapFlockFromApi(createdFlock);
+    addLog(mapped.id,'Registered','Breed: '+breed+', Qty: '+qty+', Supplier: '+(sup ? sup.name : 'Unknown'));
+    closeM('m-reg');toast('Flock '+mapped.id+' registered!','t-ok');
+  }catch(_err){
+    toast('Backend not reachable. Could not register flock.','t-bad');
+    return;
+  }
   renderFlocks();renderDash();
 });
 
@@ -312,7 +590,7 @@ function openEditModal(fid){
   $('do-edit').style.display=isClosed?'none':'';$('edit-nochange').style.display='none';
   ['fg-eb','fg-eq'].forEach(function(id){inv(id,false);});openM('m-edit');
 }
-$('do-edit').addEventListener('click',function(){
+$('do-edit').addEventListener('click',async function(){
   var breed=$('e-breed').value.trim(),qty=parseInt($('e-qty').value,10),notes=$('e-notes').value.trim(),ok=true;
   inv('fg-eb',!breed);if(!breed)ok=false;
   inv('fg-eq',!qty||qty<1);if(!qty||qty<1)ok=false;
@@ -324,7 +602,28 @@ $('do-edit').addEventListener('click',function(){
   if((f.notes||'')!==notes)diff.push({field:'Notes',old:f.notes||'(empty)',nw:notes||'(empty)'});
   if(!diff.length){$('edit-nochange').style.display='';return;}
   $('edit-nochange').style.display='none';
-  f.breed=breed;f.qty=qty;f.notes=notes;
+  try{
+    var updateRes = await api('/flocks/'+encodeURIComponent(f.flockDbId || ''),{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        breed:breed,
+        currentQty:qty,
+        notes:notes,
+        updatedBy:null
+      })
+    });
+    if(!updateRes.ok){
+      toast('Failed to update flock in backend.','t-bad');
+      return;
+    }
+    var updated = await updateRes.json();
+    var mapped = mapFlockFromApi(updated);
+    flocks = flocks.map(function(f0){ return String(f0.id) === String(editTarget) ? mapped : f0; });
+  }catch(_err){
+    toast('Backend not reachable. Could not update flock.','t-bad');
+    return;
+  }
   addLog(editTarget,'Updated',diff.map(function(d){return d.field;}).join(', ')+' updated',diff);
   closeM('m-edit');toast('Flock '+editTarget+' updated.','t-ok');renderFlocks();renderDash();editTarget=null;
 });
@@ -340,10 +639,26 @@ function openCloseModal(fid){
   $('close-chk').checked=false;$('do-close').disabled=true;inv('fg-cd',false);openM('m-close');
 }
 $('close-chk').addEventListener('change',function(){$('do-close').disabled=!this.checked;});
-$('do-close').addEventListener('click',function(){
+$('do-close').addEventListener('click',async function(){
   var cd=$('close-date').value;inv('fg-cd',!cd);if(!cd)return;
   var f=flocks.find(function(x){return x.id===closeTarget;});
-  f.status='Closed';f.closeDate=cd;
+  try{
+    var closeRes = await api('/flocks/'+encodeURIComponent(f.flockDbId || '')+'/close',{
+      method:'PATCH',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({closeDate:cd,closedBy:EDITOR})
+    });
+    if(!closeRes.ok){
+      toast('Failed to close flock in backend.','t-bad');
+      return;
+    }
+    var closed = await closeRes.json();
+    var mapped = mapFlockFromApi(closed);
+    flocks = flocks.map(function(f0){ return String(f0.id) === String(closeTarget) ? mapped : f0; });
+  }catch(_err){
+    toast('Backend not reachable. Could not close flock.','t-bad');
+    return;
+  }
   addLog(closeTarget,'Closed','Close date: '+fmt(cd),[{field:'Status',old:'Active',nw:'Closed'},{field:'Close Date',old:'—',nw:fmt(cd)}]);
   closeM('m-close');toast('Flock '+closeTarget+' closed.','t-ok');renderFlocks();renderDash();closeTarget=null;
 });
@@ -613,12 +928,30 @@ $('btn-other-sale').addEventListener('click',function(){
   $('os-date').value=today();$('os-cat').value='';$('os-desc').value='';$('os-buyer').value='';$('os-amount').value='';
   ['fg-os-d','fg-os-cat','fg-os-desc','fg-os-amt'].forEach(function(id){inv(id,false);});openM('m-osale');
 });
-$('do-osale').addEventListener('click',function(){
+$('do-osale').addEventListener('click',async function(){
   var date=$('os-date').value,cat=$('os-cat').value,desc=$('os-desc').value.trim(),amount=parseFloat($('os-amount').value),ok=true;
   inv('fg-os-d',!date);if(!date)ok=false;inv('fg-os-cat',!cat);if(!cat)ok=false;
   inv('fg-os-desc',!desc);if(!desc)ok=false;inv('fg-os-amt',!amount||amount<=0);if(!amount||amount<=0)ok=false;
   if(!ok)return;
-  otherSales.push({id:'OS-'+String(osSeq++).padStart(4,'0'),date:date,category:cat,desc:desc,buyer:$('os-buyer').value.trim(),amount:amount,time:now(),editor:EDITOR});
+  var payload={
+    saleDate:date,
+    category:uiOtherSaleCategoryToApi(cat),
+    description:desc,
+    buyer:$('os-buyer').value.trim(),
+    amount:amount
+  };
+  try{
+    var createRes=await api('/other-sales',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    });
+    if(!createRes.ok){toast('Failed to save other sale in backend.','t-bad');return;}
+    await loadOtherSalesFromApi();
+  }catch(_err){
+    toast('Backend not reachable. Could not save other sale.','t-bad');
+    return;
+  }
   addLog('Other Sale','Added',desc+' — '+rupees(amount));
   closeM('m-osale');toast('Sale recorded.','t-ok');renderSalesView();renderDash();
 });
@@ -631,7 +964,7 @@ function renderSalesView(){
   var totalFS=flockSales.reduce(function(s,x){return s+x.total;},0);
   var totalOS=otherSales.reduce(function(s,x){return s+x.amount;},0);
   $('stat-fsale').textContent=rupees(totalFS);$('stat-osale').textContent=rupees(totalOS);
-  $('stat-txns').textContent=flockSales.length+otherSales.length;$('stat-totalrev').textContent=rupees(totalFS+totalOS);
+  $('stat-txns').textContent=allTxns.length;$('stat-totalrev').textContent=rupees(totalFS+totalOS);
   $('sales-tbody').innerHTML=allTxns.length?allTxns.map(function(t){
     return '<tr><td>'+fmt(t.date)+'</td><td><span class="badge b-active" style="background:var(--gl)">'+esc(t.type)+'</span></td><td>'+esc(t.ref)+'</td><td>'+esc(t.detail)+'</td><td>—</td><td style="font-weight:600;color:var(--green)">'+rupees(t.amount)+'</td></tr>';
   }).join(''):'<tr><td colspan="6"><div class="empty" style="padding:20px"><div class="et">No sales yet.</div></div></td></tr>';
@@ -890,6 +1223,33 @@ $('suph-close-btn').addEventListener('click',function(){
 // ════════════════════════════════════════════════════
 //  US-012/013/014/015/016: FEED
 // ════════════════════════════════════════════════════
+async function adjustFeedStockInBackend(name, delta, minThreshold){
+  var res = await api('/feed-types/stock',{
+    method:'PATCH',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      name:name,
+      delta:delta,
+      minThreshold:minThreshold
+    })
+  });
+  if(!res.ok){
+    var txt = await res.text().catch(function(){ return ''; });
+    throw new Error(txt || 'Failed to update feed stock in backend.');
+  }
+}
+
+async function updateFeedThresholdInBackend(feedTypeId, threshold){
+  var res = await api('/feed-types/'+encodeURIComponent(feedTypeId)+'/threshold',{
+    method:'PATCH',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({minThreshold:threshold})
+  });
+  if(!res.ok){
+    throw new Error('Failed to update feed threshold in backend.');
+  }
+}
+
 function refreshFeedTypeSelects(){
   var types=Object.keys(feedStock);
   var lists=[{id:'fu-type',placeholder:'— Select —'},{id:'fsl-type',placeholder:'— Select —'},{id:'df-type',placeholder:'— Select —'}];
@@ -905,13 +1265,19 @@ $('btn-feed-buy').addEventListener('click',function(){
   ['fg-fb-s','fg-fb-ft','fg-fb-q','fg-fb-c','fg-fb-d'].forEach(function(id){inv(id,false);});openM('m-feed-buy');
 });
 ['fb-qty','fb-cost'].forEach(function(id){$(id).addEventListener('input',function(){var q=parseInt($('fb-qty').value)||0,c=parseInt($('fb-cost').value)||0;$('fb-total').textContent=q&&c?rupees(q*c):'₨ —';});});
-$('do-feed-buy').addEventListener('click',function(){
+$('do-feed-buy').addEventListener('click',async function(){
   var supId=$('fb-sup').value,type=$('fb-type').value.trim(),qty=parseInt($('fb-qty').value),cost=parseInt($('fb-cost').value),date=$('fb-date').value,ok=true;
   inv('fg-fb-s',!supId);if(!supId)ok=false;inv('fg-fb-ft',!type);if(!type)ok=false;
   inv('fg-fb-q',!qty||qty<1);if(!qty||qty<1)ok=false;inv('fg-fb-c',!cost||cost<1);if(!cost||cost<1)ok=false;
   inv('fg-fb-d',!date);if(!date)ok=false;if(!ok)return;
-  if(!feedStock[type])feedStock[type]={qty:0,threshold:5,lastPurchase:null,lastUsage:null};
-  feedStock[type].qty+=qty;feedStock[type].lastPurchase=date;
+  try{
+    await adjustFeedStockInBackend(type, qty, (feedStock[type] && feedStock[type].threshold) || 5);
+    await loadFeedTypesFromApi();
+    if(feedStock[type]) feedStock[type].lastPurchase = date;
+  }catch(err){
+    toast(err.message || 'Backend stock update failed.','t-bad');
+    return;
+  }
   var sup=suppliers.find(function(s){return s.id===supId;});
   feedTxns.push({id:'FT-'+String(ftSeq++).padStart(4,'0'),type:'Purchase',feedType:type,supId:supId,supName:sup?sup.name:'',qty:qty,cost:qty*cost,costPerSack:cost,date:date,time:now()});
   addLog('Feed','Purchase',type+': '+qty+' sacks from '+(sup?sup.name:''));
@@ -927,14 +1293,21 @@ $('btn-feed-usage').addEventListener('click',function(){
   $('btn-dfeed').click();
 });
 $('fu-type').addEventListener('change',function(){var s=feedStock[this.value];$('fu-hint').textContent=s?'Available: '+s.qty+' sacks':'';});
-$('do-feed-use').addEventListener('click',function(){
+$('do-feed-use').addEventListener('click',async function(){
   var flockId=$('fu-flock').value,type=$('fu-type').value,qty=parseInt($('fu-qty').value),date=$('fu-date').value,ok=true;
   inv('fg-fu-f',!flockId);if(!flockId)ok=false;inv('fg-fu-ft',!type);if(!type)ok=false;
   inv('fg-fu-q',!qty||qty<1);if(!qty||qty<1)ok=false;inv('fg-fu-d',!date);if(!date)ok=false;
   if(!ok)return;
   var s=feedStock[type];
   if(s&&qty>s.qty){if(!confirm('Using '+qty+' sacks but only '+s.qty+' available. Continue?'))return;}
-  if(s){s.qty=Math.max(0,s.qty-qty);s.lastUsage=date;}
+  try{
+    await adjustFeedStockInBackend(type, -qty, s ? s.threshold : 5);
+    await loadFeedTypesFromApi();
+    if(feedStock[type]) feedStock[type].lastUsage = date;
+  }catch(err){
+    toast(err.message || 'Backend stock update failed.','t-bad');
+    return;
+  }
   var f=flocks.find(function(x){return x.id===flockId;});
   feedTxns.push({id:'FT-'+String(ftSeq++).padStart(4,'0'),type:'Usage',feedType:type,flockId:flockId,flockName:f?f.breed:'',qty:qty,date:date,time:now()});
   addLog(flockId,'Feed Usage',type+': '+qty+' sacks used');
@@ -952,13 +1325,19 @@ $('btn-feed-sale').addEventListener('click',function(){
 });
 $('fsl-type').addEventListener('change',function(){var s=feedStock[this.value];$('fsl-hint').textContent=s?'Available: '+s.qty+' sacks':'';});
 ['fsl-qty','fsl-price'].forEach(function(id){$(id).addEventListener('input',function(){var q=parseInt($('fsl-qty').value)||0,p=parseInt($('fsl-price').value)||0;$('fsl-total').textContent=q&&p?rupees(q*p):'₨ —';});});
-$('do-feed-sale').addEventListener('click',function(){
+$('do-feed-sale').addEventListener('click',async function(){
   var type=$('fsl-type').value,buyer=$('fsl-buyer').value.trim(),qty=parseInt($('fsl-qty').value),price=parseInt($('fsl-price').value),date=$('fsl-date').value,ok=true;
   inv('fg-fsl-ft',!type);if(!type)ok=false;inv('fg-fsl-b',!buyer);if(!buyer)ok=false;
   inv('fg-fsl-q',!qty||qty<1);if(!qty||qty<1)ok=false;inv('fg-fsl-c',!price||price<1);if(!price||price<1)ok=false;
   inv('fg-fsl-d',!date);if(!date)ok=false;if(!ok)return;
   var s=feedStock[type];if(s&&qty>s.qty){toast('Insufficient stock ('+s.qty+' available)','t-bad');return;}
-  if(s)s.qty=Math.max(0,s.qty-qty);
+  try{
+    await adjustFeedStockInBackend(type, -qty, s ? s.threshold : 5);
+    await loadFeedTypesFromApi();
+  }catch(err){
+    toast(err.message || 'Backend stock update failed.','t-bad');
+    return;
+  }
   var rev=qty*price;
   feedTxns.push({id:'FT-'+String(ftSeq++).padStart(4,'0'),type:'Sale',feedType:type,buyer:buyer,qty:qty,cost:rev,date:date,time:now()});
   otherSales.push({id:'OS-'+String(osSeq++).padStart(4,'0'),date:date,category:'Sacks Sale',desc:type+' sacks',buyer:buyer,amount:rev,time:now(),editor:EDITOR});
@@ -994,14 +1373,25 @@ function renderFeed(){
   renderFeedTxns();
 }
 
-document.addEventListener('change',function(e){
+document.addEventListener('change',async function(e){
   var el=e.target;
   if(!el||!el.classList||!el.classList.contains('feed-threshold'))return;
   var t=el.getAttribute('data-feed-type');
   if(!t||!feedStock[t])return;
   var v=parseInt(el.value,10);
   if(isNaN(v)||v<0)v=0;
-  feedStock[t].threshold=v;
+  var id = feedStock[t].id;
+  if(!id){
+    toast('Cannot update threshold: feed type id missing.','t-bad');
+    return;
+  }
+  try{
+    await updateFeedThresholdInBackend(id, v);
+    feedStock[t].threshold=v;
+  }catch(_err){
+    toast('Failed to update threshold in backend.','t-bad');
+    return;
+  }
   renderFeed();renderDash();
 });
 
@@ -1030,7 +1420,7 @@ $('btn-dfeed').addEventListener('click',function(){
 });
 ['df-day','df-night'].forEach(function(id){$(id).addEventListener('input',calcDfTotal);});
 $('df-type').addEventListener('change',updateDfAvail);
-$('do-dfeed').addEventListener('click',function(){
+$('do-dfeed').addEventListener('click',async function(){
   var flockId=$('df-flock').value,date=$('df-date').value,type=$('df-type').value;
   var day=parseInt($('df-day').value,10),night=parseInt($('df-night').value,10);
   if(isNaN(day)||day<0)day=0;
@@ -1044,7 +1434,14 @@ $('do-dfeed').addEventListener('click',function(){
   if(!ok)return;
   var s=feedStock[type];
   if(s&&total>s.qty){if(!confirm('Using '+total+' sacks but only '+s.qty+' available. Continue?'))return;}
-  if(s){s.qty=Math.max(0,s.qty-total);s.lastUsage=date;}
+  try{
+    await adjustFeedStockInBackend(type, -total, s ? s.threshold : 5);
+    await loadFeedTypesFromApi();
+    if(feedStock[type]) feedStock[type].lastUsage = date;
+  }catch(err){
+    toast(err.message || 'Backend stock update failed.','t-bad');
+    return;
+  }
   dailyFeedRecords.push({id:'DF-'+String(ftSeq++).padStart(4,'0'),flockId:flockId,date:date,feedType:type,daySacks:day,nightSacks:night,totalSacks:total,time:now(),editor:EDITOR});
   var f=flocks.find(function(x){return x.id===flockId;});
   if(day>0)feedTxns.push({id:'FT-'+String(ftSeq++).padStart(4,'0'),type:'Usage',feedType:type,flockId:flockId,flockName:f?f.breed:'',qty:day,date:date,timeOfDay:'Day',time:now()});
@@ -1071,14 +1468,62 @@ function dmRowHtml(idx){
 function dmReindex(){
   // no-op for now (keeps layout consistent)
 }
+function knownMedicineUnits(){
+  return ['bottle','ml','kg','g','sachet','tablet','pack','other'];
+}
+function splitMedicineUnitValue(value){
+  var v=(value||'').trim();
+  if(!v)return {unit:'',unitOther:''};
+  return knownMedicineUnits().indexOf(v)>=0 && v!=='other'
+    ? {unit:v,unitOther:''}
+    : {unit:'other',unitOther:v};
+}
+function composeMedicineUnitValue(unit, unitOther){
+  if(unit==='other'){
+    return (unitOther||'').trim();
+  }
+  return (unit||'').trim();
+}
+function applyMedUnitToUsageInputs(name){
+  var s = medStock[name];
+  if(!s)return;
+  var parsed=splitMedicineUnitValue(s.unit);
+  $('mu-unit').value = parsed.unit || 'other';
+  $('mu-unit-other').value = parsed.unitOther || '';
+  $('fg-mu-ou').style.display = $('mu-unit').value==='other'?'':'none';
+}
+function dmApplyUnitForRow(nameInput){
+  if(!nameInput)return;
+  var row=nameInput.closest('.fr');
+  if(!row)return;
+  var unitSel=row.querySelector('.dm-unit');
+  var wrap=row.nextElementSibling;
+  if(!unitSel||!wrap)return;
+  var otherWrap=wrap.querySelector('.dm-other-wrap');
+  var otherInput=wrap.querySelector('.dm-other');
+  var s=medStock[(nameInput.value||'').trim()];
+  if(!s)return;
+  var parsed=splitMedicineUnitValue(s.unit);
+  unitSel.value=parsed.unit||'other';
+  if(otherInput)otherInput.value=parsed.unitOther||'';
+  if(otherWrap)otherWrap.style.display=unitSel.value==='other'?'':'none';
+}
 function dmAttachRowEvents(root){
   root.querySelectorAll('.dm-unit').forEach(function(sel){
+    if(sel.dataset.bound==='1')return;
+    sel.dataset.bound='1';
     sel.addEventListener('change',function(){
       var wrap=sel.closest('.fr').nextElementSibling;
       if(!wrap)return;
       var otherWrap=wrap.querySelector('.dm-other-wrap');
       if(otherWrap)otherWrap.style.display=(sel.value==='other')?'':'none';
     });
+  });
+  root.querySelectorAll('.dm-name').forEach(function(input){
+    if(input.dataset.bound==='1')return;
+    input.dataset.bound='1';
+    input.addEventListener('change',function(){dmApplyUnitForRow(input);});
+    input.addEventListener('blur',function(){dmApplyUnitForRow(input);});
   });
 }
 $('btn-dmed').addEventListener('click',function(){
@@ -1099,7 +1544,7 @@ $('dm-add').addEventListener('click',function(e){
   dmAttachRowEvents($('dm-items'));
   dmReindex();
 });
-$('do-dmed').addEventListener('click',function(){
+$('do-dmed').addEventListener('click',async function(){
   var flockId=$('dm-flock').value,date=$('dm-date').value,notes=$('dm-notes').value.trim();
   var ok=true;
   inv('fg-dm-f',!flockId);if(!flockId)ok=false;
@@ -1112,27 +1557,47 @@ $('do-dmed').addEventListener('click',function(){
     if(!top||!bottom)continue;
     var name=(top.querySelector('.dm-name')||{}).value||'';
     name=name.trim();
-    var qty=parseFloat((top.querySelector('.dm-qty')||{}).value);
+    var qty=parseInt((top.querySelector('.dm-qty')||{}).value,10);
     var unit=(top.querySelector('.dm-unit')||{}).value||'';
     var usageTime=((bottom.querySelector('.dm-time')||{}).value||'').trim();
     var unitOther=((bottom.querySelector('.dm-other')||{}).value||'').trim();
     if(!name)continue;
     if(!qty||qty<=0){toast('Medicine qty must be > 0 for '+name,'t-bad');return;}
     if(!unit){toast('Select a unit for '+name,'t-bad');return;}
-    items.push({name:name,qty:qty,unit:unit,unitOther:unitOther,usageTime:usageTime});
+    if(unit==='other'&&!unitOther){toast('Provide other unit for '+name,'t-bad');return;}
+    items.push({name:name,qty:qty,unit:composeMedicineUnitValue(unit,unitOther),usageTime:usageTime});
   }
   if(!items.length){toast('Add at least one medicine item.','t-bad');return;}
+  for(var j=0;j<items.length;j++){
+    var item = items[j];
+    var existing = medStock[item.name];
+    if(existing && item.qty > existing.qty){
+      toast('Insufficient stock for '+item.name+' ('+existing.qty+' available)','t-bad');
+      return;
+    }
+  }
+  try{
+    for(var k=0;k<items.length;k++){
+      var stockItem = medStock[items[k].name];
+      await adjustMedicineStockInBackend(
+        items[k].name,
+        -items[k].qty,
+        stockItem ? stockItem.threshold : 5,
+        items[k].unit || (stockItem ? stockItem.unit : null)
+      );
+    }
+    await loadMedicinesFromApi();
+  }catch(err){
+    toast(err.message || 'Backend stock update failed.','t-bad');
+    return;
+  }
   dailyMedRecords.push({id:'DM-'+String(mdSeq++).padStart(4,'0'),flockId:flockId,date:date,items:items,notes:notes,time:now(),editor:EDITOR});
   // Also write into inventory transactions (stock deduction)
   items.forEach(function(it){
     var key=it.name;
     var s=medStock[key];
-    if(s&&typeof s.qty==='number'){
-      if(it.qty>s.qty){toast('Insufficient stock for '+key+' ('+s.qty+' available)','t-bad');return;}
-      s.qty=Math.max(0,s.qty-it.qty);
-      s.lastUpdated=date;
-    }
-    medTxns.push({id:'MT-'+String(mdSeq++).padStart(4,'0'),type:'Usage',medicine:key,flockId:flockId,qty:it.qty,unit:it.unit,unitOther:it.unitOther,usageTime:it.usageTime,notes:notes,date:date,time:now()});
+    if(s&&typeof s.qty==='number') s.lastUpdated=date;
+    medTxns.push({id:'MT-'+String(mdSeq++).padStart(4,'0'),type:'Usage',medicine:key,flockId:flockId,qty:it.qty,unit:it.unit,usageTime:it.usageTime,notes:notes,date:date,time:now()});
   });
   addLog(flockId,'Daily Medicine',items.length+' item(s) on '+fmt(date));
   closeM('m-dmed');toast('Daily medicine saved.','t-ok');refreshMedSelects();renderMedicine();renderDash();
@@ -1141,6 +1606,23 @@ $('do-dmed').addEventListener('click',function(){
 // ════════════════════════════════════════════════════
 //  US-017/018/019: MEDICINE
 // ════════════════════════════════════════════════════
+async function adjustMedicineStockInBackend(name, delta, minThreshold, unit){
+  var res = await api('/medicines/stock',{
+    method:'PATCH',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      name:name,
+      delta:delta,
+      minThreshold:minThreshold,
+      unit:unit||null
+    })
+  });
+  if(!res.ok){
+    var txt = await res.text().catch(function(){ return ''; });
+    throw new Error(txt || 'Failed to update medicine stock in backend.');
+  }
+}
+
 function refreshMedSelects(){
   var meds=Object.keys(medStock);
   var sel=$('mu-med');sel.innerHTML='<option value="">— Select —</option>';
@@ -1158,7 +1640,7 @@ $('mb-unit').addEventListener('change',function(){
   $('fg-mb-ou').style.display=this.value==='other'?'':'none';
 });
 ['mb-qty','mb-cost'].forEach(function(id){$(id).addEventListener('input',function(){var q=parseInt($('mb-qty').value)||0,c=parseInt($('mb-cost').value)||0;$('mb-total').textContent=q&&c?rupees(q*c):'₨ —';});});
-$('do-med-buy').addEventListener('click',function(){
+$('do-med-buy').addEventListener('click',async function(){
   var name=$('mb-name').value.trim(),supId=$('mb-sup').value,unit=$('mb-unit').value,unitOther=$('mb-unit-other').value.trim();
   var qty=parseInt($('mb-qty').value),cost=parseInt($('mb-cost').value),date=$('mb-date').value,thresh=parseInt($('mb-thresh').value)||5,ok=true;
   inv('fg-mb-m',!name);if(!name)ok=false;inv('fg-mb-s',!supId);if(!supId)ok=false;
@@ -1166,13 +1648,22 @@ $('do-med-buy').addEventListener('click',function(){
   inv('fg-mb-ou',unit==='other'&&!unitOther);if(unit==='other'&&!unitOther)ok=false;
   inv('fg-mb-q',!qty||qty<1);if(!qty||qty<1)ok=false;inv('fg-mb-c',!cost||cost<1);if(!cost||cost<1)ok=false;
   inv('fg-mb-d',!date);if(!date)ok=false;if(!ok)return;
-  if(!medStock[name])medStock[name]={qty:0,threshold:thresh,supplier:'',supId:supId,lastUpdated:null,unit:unit,unitOther:unitOther};
-  medStock[name].qty+=qty;medStock[name].threshold=thresh;medStock[name].supId=supId;medStock[name].lastUpdated=date;
-  medStock[name].unit=unit;medStock[name].unitOther=unitOther;
+  var resolvedUnit=composeMedicineUnitValue(unit,unitOther);
+  try{
+    await adjustMedicineStockInBackend(name, qty, thresh, resolvedUnit);
+    await loadMedicinesFromApi();
+    if(!medStock[name]) medStock[name]={qty:0,threshold:thresh,supplier:'',supId:supId,lastUpdated:null,unit:resolvedUnit};
+    medStock[name].supId=supId;
+    medStock[name].lastUpdated=date;
+    medStock[name].unit=resolvedUnit;
+  }catch(err){
+    toast(err.message || 'Backend stock update failed.','t-bad');
+    return;
+  }
   var sup=suppliers.find(function(s){return s.id===supId;});
   if(sup)medStock[name].supplier=sup.name;
-  medTxns.push({id:'MT-'+String(mdSeq++).padStart(4,'0'),type:'Purchase',medicine:name,supId:supId,supName:sup?sup.name:'',qty:qty,unit:unit,unitOther:unitOther,cost:qty*cost,date:date,time:now()});
-  addLog('Medicine','Purchase',name+': '+qty+' '+(unit==='other'?unitOther:unit)+' from '+(sup?sup.name:''));
+  medTxns.push({id:'MT-'+String(mdSeq++).padStart(4,'0'),type:'Purchase',medicine:name,supId:supId,supName:sup?sup.name:'',qty:qty,unit:resolvedUnit,cost:qty*cost,date:date,time:now()});
+  addLog('Medicine','Purchase',name+': '+qty+' '+resolvedUnit+' from '+(sup?sup.name:''));
   closeM('m-med-buy');toast('Medicine stock updated.','t-ok');refreshMedSelects();renderMedicine();renderDash();
 });
 $('btn-med-usage').addEventListener('click',function(){
@@ -1184,22 +1675,39 @@ $('btn-med-usage').addEventListener('click',function(){
 $('mu-unit').addEventListener('change',function(){
   $('fg-mu-ou').style.display=this.value==='other'?'':'none';
 });
-$('mu-med').addEventListener('change',function(){var s=medStock[this.value];$('mu-hint').textContent=s?'Available: '+s.qty+' units':'';});
-$('do-med-use').addEventListener('click',function(){
+$('mu-med').addEventListener('change',function(){
+  var s=medStock[this.value];
+  $('mu-hint').textContent=s?'Available: '+s.qty+' units':'';
+  if(s)applyMedUnitToUsageInputs(this.value);
+});
+$('do-med-use').addEventListener('click',async function(){
   var flockId=$('mu-flock').value,med=$('mu-med').value,qty=parseInt($('mu-qty').value),unit=$('mu-unit').value,unitOther=$('mu-unit-other').value.trim();
   var date=$('mu-date').value,notes=$('mu-notes').value.trim(),ok=true;
   inv('fg-mu-f',!flockId);if(!flockId)ok=false;inv('fg-mu-m',!med);if(!med)ok=false;
   inv('fg-mu-q',!qty||qty<1);if(!qty||qty<1)ok=false;
+  var s=medStock[med];
+  if(s&&!unit){
+    var parsed=splitMedicineUnitValue(s.unit);
+    unit=parsed.unit||'';
+    unitOther=parsed.unitOther||'';
+  }
   inv('fg-mu-u',!unit);if(!unit)ok=false;
   inv('fg-mu-ou',unit==='other'&&!unitOther);if(unit==='other'&&!unitOther)ok=false;
   inv('fg-mu-d',!date);if(!date)ok=false;
   if(!ok)return;
-  var s=medStock[med];
   if(s&&s.qty===0){toast('No stock available for '+med,'t-bad');return;}
   if(s&&qty>s.qty){toast('Insufficient stock ('+s.qty+' units)','t-bad');return;}
-  if(s){s.qty=Math.max(0,s.qty-qty);s.lastUpdated=date;}
-  medTxns.push({id:'MT-'+String(mdSeq++).padStart(4,'0'),type:'Usage',medicine:med,flockId:flockId,qty:qty,unit:unit,unitOther:unitOther,notes:notes,date:date,time:now()});
-  if(s&&s.qty<=s.threshold)toast('⚠️ '+med+' stock is low ('+s.qty+' units remaining)','t-info');
+  var resolvedUseUnit=composeMedicineUnitValue(unit,unitOther);
+  try{
+    await adjustMedicineStockInBackend(med, -qty, s ? s.threshold : 5, resolvedUseUnit || (s ? s.unit : null));
+    await loadMedicinesFromApi();
+    if(medStock[med]) medStock[med].lastUpdated = date;
+  }catch(err){
+    toast(err.message || 'Backend stock update failed.','t-bad');
+    return;
+  }
+  medTxns.push({id:'MT-'+String(mdSeq++).padStart(4,'0'),type:'Usage',medicine:med,flockId:flockId,qty:qty,unit:resolvedUseUnit,notes:notes,date:date,time:now()});
+  if(medStock[med]&&medStock[med].qty<=medStock[med].threshold)toast('⚠️ '+med+' stock is low ('+medStock[med].qty+' units remaining)','t-info');
   addLog(flockId,'Medicine Used',med+': '+qty+' units on '+fmt(date));
   closeM('m-med-use');toast('Medicine usage saved.','t-ok');refreshMedSelects();renderMedicine();renderDash();
 });
@@ -1215,7 +1723,7 @@ function renderMedicine(){
   $('med-txn-tbody').innerHTML=rows.length?rows.map(function(t){
     var typeColor=t.type==='Purchase'?'var(--green)':'var(--accent)';
     return '<tr><td>'+fmt(t.date)+'</td><td><strong style="color:'+typeColor+'">'+esc(t.type)+'</strong></td><td>'+esc(t.medicine)+'</td>'
-      +'<td style="color:var(--muted)">'+esc(t.flockId||t.supName||'—')+'</td><td>'+t.qty+' '+esc(t.unit==='other'?(t.unitOther||'other'):(t.unit||'units'))+'</td><td>'+(t.cost?rupees(t.cost):'—')+'</td></tr>';
+      +'<td style="color:var(--muted)">'+esc(t.flockId||t.supName||'—')+'</td><td>'+t.qty+' '+esc(t.unit||'units')+'</td><td>'+(t.cost?rupees(t.cost):'—')+'</td></tr>';
   }).join(''):'<tr><td colspan="6"><div class="empty" style="padding:20px"><div class="et">No records.</div></div></td></tr>';
 }
 
@@ -1374,43 +1882,138 @@ function editWorker(wid){
   $('wk-name').value=w.name;$('wk-role').value=w.role;$('wk-contact').value=w.contact||'';$('wk-join').value=w.join||'';$('wk-salary').value=w.salary;$('wk-status').value=w.status||'Active';
   ['fg-wk-n','fg-wk-r','fg-wk-s'].forEach(function(id){inv(id,false);});openM('m-worker');
 }
-$('btn-process-payroll').addEventListener('click',function(){
-  $('pr-start').value=today();$('pr-end').value=today();$('pr-days').value='';
+$('btn-process-payroll').addEventListener('click',async function(){
+  try{
+    var res=await api('/workers');
+    if(res.ok){
+      var data=await res.json();
+      workers=data.map(mapWorkerFromApi);
+    }
+  }catch(_err){
+    // Keep existing in-memory workers if refresh fails.
+  }
+  $('pr-start').value='';$('pr-end').value=today();$('pr-days').value='';
+  var firstActive=workers.find(function(w){return w.status==='Active';});
+  payrollSelectedWorkerId=firstActive?String(firstActive.id):'';
+  inv('fg-pr-workers',false);
+  renderPayrollWorkerSelector();
   updatePayrollPreview();openM('m-payroll');
 });
-function updatePayrollPreview(){
-  var start=$('pr-start').value,end=$('pr-end').value,days=parseInt($('pr-days').value,10);
+function renderPayrollWorkerSelector(){
   var active=workers.filter(function(w){return w.status==='Active';});
+  var holder=$('pr-worker-list');
+  if(!holder)return;
+  if(!active.length){
+    holder.innerHTML='<div class="empty" style="padding:14px"><div class="et">No active workers available.</div></div>';
+    $('pr-worker-hint').textContent='No worker selected';
+    return;
+  }
+  if(!payrollSelectedWorkerId){
+    payrollSelectedWorkerId=String(active[0].id);
+  }
+  holder.innerHTML=active.map(function(w){
+    var wid=String(w.id);
+    var checked=payrollSelectedWorkerId===wid?' checked':'';
+    return '<label style="display:flex;align-items:center;gap:8px;padding:6px 4px;cursor:pointer;border-bottom:1px solid var(--sand)">'
+      +'<input type="radio" name="pr-worker-radio" class="pr-worker-check" data-wid="'+esc(wid)+'"'+checked+'>'
+      +'<span style="font-weight:600">'+esc(w.name)+'</span>'
+      +'<span style="font-size:0.75rem;color:var(--muted)">('+esc(w.role)+')</span>'
+      +'<span style="margin-left:auto;font-family:\'DM Mono\',monospace;font-size:0.75rem">'+rupees(w.salary)+'</span>'
+      +'</label>';
+  }).join('');
+  var selected=workers.find(function(w){return String(w.id)===String(payrollSelectedWorkerId);});
+  $('pr-worker-hint').textContent=selected?('Selected: '+selected.name):'No worker selected';
+}
+
+function getSelectedPayrollWorker(){
+  return workers.find(function(w){
+    return w.status==='Active' && String(w.id)===String(payrollSelectedWorkerId);
+  })||null;
+}
+
+function computeDaysWorked(start,end){
+  if(!start||!end)return 0;
+  var s=new Date(start+'T00:00:00');
+  var e=new Date(end+'T00:00:00');
+  var ms=e.getTime()-s.getTime();
+  if(ms<0)return 0;
+  return Math.floor(ms/86400000)+1;
+}
+
+function updatePayrollPreview(){
+  var end=$('pr-end').value;
+  var active=workers.filter(function(w){return w.status==='Active';});
+  var selected=getSelectedPayrollWorker();
+  var start=selected && selected.join ? selected.join : '';
+  $('pr-start').value=start;
+  var days=computeDaysWorked(start,end);
+  $('pr-days').value=days?String(days):'';
   if(!active.length){$('payroll-preview').innerHTML='<div class="ab ab-warn"><span class="ab-ico">⚠️</span><div>No active workers.</div></div>';return;}
-  if(!start||!end||!days||days<=0){$('payroll-preview').innerHTML='<div class="ab ab-info"><span class="ab-ico">ℹ️</span><div>Select a date range and enter days worked to preview payroll.</div></div>';return;}
+  if(!selected){$('payroll-preview').innerHTML='<div class="ab ab-warn"><span class="ab-ico">⚠️</span><div>Select one worker.</div></div>';return;}
+  if(!start||!end||!days||days<=0){$('payroll-preview').innerHTML='<div class="ab ab-info"><span class="ab-ico">ℹ️</span><div>Select a worker, date range, and days worked to preview payroll.</div></div>';return;}
   if(end<start){$('payroll-preview').innerHTML='<div class="ab ab-warn"><span class="ab-ico">⚠️</span><div>End date must be after start date.</div></div>';return;}
-  var total=active.reduce(function(s,w){return s+((w.salary/30)*days);},0);
-  $('payroll-preview').innerHTML='<div class="ab ab-info" style="margin-bottom:10px"><span class="ab-ico">📋</span><div>Processing payroll for <strong>'+fmt(start)+' → '+fmt(end)+'</strong> — Days: <strong>'+days+'</strong> — '+active.length+' workers — Total: <strong>'+rupees(total)+'</strong></div></div>'
+  var total=(selected.salary/30)*days;
+  $('payroll-preview').innerHTML='<div class="ab ab-info" style="margin-bottom:10px"><span class="ab-ico">📋</span><div>Processing payroll for <strong>'+fmt(start)+' → '+fmt(end)+'</strong> — Days: <strong>'+days+'</strong> — Worker: <strong>'+esc(selected.name)+'</strong> — Total: <strong>'+rupees(total)+'</strong></div></div>'
     +'<table><thead><tr><th>Worker</th><th>Role</th><th>Monthly</th><th>Per Day</th><th>Days</th><th>Total</th></tr></thead><tbody>'
-    +active.map(function(w){
-      var perDay=w.salary/30;
+    +function(){
+      var perDay=selected.salary/30;
       var wTotal=perDay*days;
-      return '<tr><td>'+esc(w.name)+'</td><td style="color:var(--muted)">'+esc(w.role)+'</td><td>'+rupees(w.salary)+'</td><td>'+rupees(perDay.toFixed(2))+'</td><td>'+days+'</td><td style="font-weight:700">'+rupees(wTotal.toFixed(2))+'</td></tr>';
-    }).join('')
+      return '<tr><td>'+esc(selected.name)+'</td><td style="color:var(--muted)">'+esc(selected.role)+'</td><td>'+rupees(selected.salary)+'</td><td>'+rupees(perDay.toFixed(2))+'</td><td>'+days+'</td><td style="font-weight:700">'+rupees(wTotal.toFixed(2))+'</td></tr>';
+    }()
     +'</tbody></table>';
 }
-['pr-start','pr-end','pr-days'].forEach(function(id){$(id).addEventListener('change',updatePayrollPreview);$(id).addEventListener('input',updatePayrollPreview);});
-$('do-payroll').addEventListener('click',function(){
-  var start=$('pr-start').value,end=$('pr-end').value,days=parseInt($('pr-days').value,10);
-  var active=workers.filter(function(w){return w.status==='Active';});
+['pr-end'].forEach(function(id){$(id).addEventListener('change',updatePayrollPreview);$(id).addEventListener('input',updatePayrollPreview);});
+$('pr-worker-list').addEventListener('change',function(e){
+  if(!e.target.classList.contains('pr-worker-check'))return;
+  var wid=String(e.target.getAttribute('data-wid'));
+  payrollSelectedWorkerId=wid;
+  renderPayrollWorkerSelector();
+  updatePayrollPreview();
+});
+$('do-payroll').addEventListener('click',async function(){
+  var selected=getSelectedPayrollWorker();
+  var start=selected&&selected.join?selected.join:'';
+  var end=$('pr-end').value,days=computeDaysWorked(start,end);
   inv('fg-pr-s',!start);if(!start)return;
   inv('fg-pr-e',!end);if(!end)return;
   inv('fg-pr-days',!days||days<=0);if(!days||days<=0)return;
+  inv('fg-pr-workers',!selected);if(!selected)return;
   if(end<start){toast('End date must be after start date.','t-bad');return;}
-  if(!active.length){toast('No active workers','t-bad');return;}
-  var existing=payrollRuns.find(function(p){return p.start===start&&p.end===end&&p.days===days;});
-  if(existing&&!confirm('Payroll for this period already processed. Re-process?'))return;
-  var total=active.reduce(function(s,w){return s+((w.salary/30)*days);},0);
-  var run={id:'PR-'+String(prSeq++).padStart(3,'0'),start:start,end:end,days:days,workers:active.map(function(w){return{name:w.name,role:w.role,monthly:w.salary,perDay:w.salary/30,days:days,total:(w.salary/30)*days};}),total:total,processedOn:now(),status:'Processed'};
-  if(existing){var idx=payrollRuns.indexOf(existing);payrollRuns[idx]=run;}else payrollRuns.push(run);
+  var payload={endDate:end,workerId:selected.id};
+  var processed=null;
+  try{
+    var res=await api('/payroll/process',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    });
+    if(!res.ok){
+      var err='Failed to process payroll in backend.';
+      try{
+        var errText=await res.text();
+        if(errText){
+          try{
+            var parsed=JSON.parse(errText);
+            err=parsed.message||parsed.error||errText;
+          }catch(_ignoreJson){
+            err=errText;
+          }
+        }
+      }catch(_ignore){}
+      err='['+res.status+'] '+err;
+      toast(err,'t-bad');
+      return;
+    }
+    processed=await res.json();
+    await loadPayrollRunsFromApi();
+  }catch(_err){
+    toast('Backend not reachable. Could not process payroll.','t-bad');
+    return;
+  }
+  var total=Number(processed && processed.totalAmount ? processed.totalAmount : 0);
   // Add to expenses
   expenses.push({id:'EX-'+String(expSeq++).padStart(4,'0'),cat:'Labour',desc:'Payroll — '+fmt(start)+' → '+fmt(end)+' ('+days+' days)',units:days,rate:(total/Math.max(1,days)),amount:total,date:today(),flockId:'',time:now(),editor:EDITOR});
-  addLog('Payroll','Processed',fmt(start)+' → '+fmt(end)+': '+active.length+' workers, total '+rupees(total));
+  addLog('Payroll','Processed',fmt(start)+' → '+fmt(end)+': '+selected.name+' total '+rupees(total));
   closeM('m-payroll');toast('Payroll processed: '+rupees(total),'t-ok');renderPayroll();renderExpenses();
 });
 function renderPayroll(){

@@ -9,5 +9,6 @@ import java.util.UUID;
 
 @Repository
 public interface FlockAuditLogRepository extends JpaRepository<FlockAuditLog, UUID> {
+    List<FlockAuditLog> findByFlockId(UUID flockId);
     List<FlockAuditLog> findByFlockIdOrderByChangedAtDesc(UUID flockId);
 }

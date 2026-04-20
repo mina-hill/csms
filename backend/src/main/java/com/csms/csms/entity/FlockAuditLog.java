@@ -1,5 +1,6 @@
 package com.csms.csms.entity;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -19,10 +20,10 @@ public class FlockAuditLog {
     @Column(name = "changed_by")
     private UUID changedBy;
 
-    @Column(name = "old_values", columnDefinition = "TEXT")
+    @Column(name = "old_values", columnDefinition = "jsonb")
     private String oldValues;
 
-    @Column(name = "new_values", columnDefinition = "TEXT")
+    @Column(name = "new_values", columnDefinition = "jsonb")
     private String newValues;
 
     @Column(name = "changed_at", insertable = false, updatable = false)
@@ -38,7 +39,9 @@ public class FlockAuditLog {
         this.newValues = newValues;
     }
 
+    @JsonProperty("id")
     public UUID getLogId()                       { return logId; }
+    @JsonProperty("id")
     public void setLogId(UUID v)                 { this.logId = v; }
 
     public UUID getFlockId()                     { return flockId; }
