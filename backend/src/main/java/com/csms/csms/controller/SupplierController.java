@@ -21,7 +21,7 @@ public class SupplierController {
     private SupplierRepository supplierRepository;
 
     /**
-     * GET /api/suppliers - Get all suppliers
+     * GET /api/suppliers - Get all suppliersgit
      * Called by: UI to display supplier list
      */
     @GetMapping

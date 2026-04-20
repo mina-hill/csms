@@ -1,0 +1,223 @@
+﻿# Project Structure
+
+## Backend
+`
+  - .idea
+  - .mvn
+  - src
+  - .gitattributes
+  - .gitignore
+  - HELP.md
+  - mvnw
+  - mvnw.cmd
+  - pom.xml
+    - .gitignore
+    - compiler.xml
+    - encodings.xml
+    - jarRepositories.xml
+    - misc.xml
+    - vcs.xml
+    - workspace.xml
+    - wrapper
+      - maven-wrapper.properties
+    - main
+    - test
+      - java
+      - resources
+        - com
+          - csms
+            - csms
+              - controller
+              - entity
+              - repository
+              - CsmsApplication.java
+                - PayrollController.java
+                - SupplierController.java
+                - UserController.java
+                - ExpenseCategory.java
+                - FlockStatus.java
+                - OtherSaleCategory.java
+                - Supplier.java
+                - SupplierType.java
+                - User.java
+                - UserRole.java
+                - Worker.java
+                - SupplierRepository.java
+                - UserRepository.java
+                - WorkerRepository.java
+        - static
+        - templates
+        - application.properties
+      - java
+        - com
+          - csms
+            - csms
+              - CsmsApplicationTests.java
+
+`
+
+## Frontend
+`
+  - public
+  - scripts
+  - src
+  - .gitignore
+  - eslint.config.js
+  - index.html
+  - package-lock.json
+  - package.json
+  - README.md
+  - vite.config.js
+    - favicon.svg
+    - icons.svg
+    - extract-legacy.mjs
+    - assets
+    - legacy
+    - App.css
+    - App.jsx
+    - index.css
+    - LegacyShell.jsx
+    - main.jsx
+      - hero.png
+      - react.svg
+      - vite.svg
+      - legacy-body.html
+      - legacy-script.js
+      - legacy.css
+
+`
+
+## Excluded Folders Content
+
+### backend/target
+classes
+generated-sources
+generated-test-sources
+maven-status
+test-classes
+
+
+### frontend/node_modules
+.bin
+.vite
+.vite-temp
+@babel
+@emnapi
+@eslint
+@eslint-community
+@humanfs
+@humanwhocodes
+@jridgewell
+@oxc-project
+@rolldown
+@types
+@vitejs
+acorn
+acorn-jsx
+ajv
+ansi-styles
+argparse
+balanced-match
+baseline-browser-mapping
+brace-expansion
+browserslist
+callsites
+caniuse-lite
+chalk
+color-convert
+color-name
+concat-map
+convert-source-map
+cross-spawn
+csstype
+debug
+deep-is
+detect-libc
+electron-to-chromium
+escalade
+escape-string-regexp
+eslint
+eslint-plugin-react-hooks
+eslint-plugin-react-refresh
+eslint-scope
+eslint-visitor-keys
+espree
+esquery
+esrecurse
+estraverse
+esutils
+fast-deep-equal
+fast-json-stable-stringify
+fast-levenshtein
+fdir
+file-entry-cache
+find-up
+flat-cache
+flatted
+gensync
+glob-parent
+globals
+has-flag
+hermes-estree
+hermes-parser
+ignore
+import-fresh
+imurmurhash
+is-extglob
+is-glob
+isexe
+js-tokens
+js-yaml
+jsesc
+json-buffer
+json-schema-traverse
+json-stable-stringify-without-jsonify
+json5
+keyv
+levn
+lightningcss
+lightningcss-win32-x64-msvc
+locate-path
+lodash.merge
+lru-cache
+minimatch
+ms
+nanoid
+natural-compare
+node-releases
+optionator
+p-limit
+p-locate
+parent-module
+path-exists
+path-key
+picocolors
+picomatch
+postcss
+prelude-ls
+punycode
+react
+react-dom
+resolve-from
+rolldown
+scheduler
+semver
+shebang-command
+shebang-regex
+source-map-js
+strip-json-comments
+supports-color
+tinyglobby
+tslib
+type-check
+update-browserslist-db
+uri-js
+vite
+which
+word-wrap
+yallist
+yocto-queue
+zod
+zod-validation-error
+.package-lock.json
+
