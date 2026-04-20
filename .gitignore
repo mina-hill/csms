@@ -1,0 +1,17 @@
+# IDE
+.idea/
+.vscode/
+
+# React
+flockcontrol-react/node_modules/
+flockcontrol-react/dist/
+
+# Spring Boot
+csms/target/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# env
+.env
