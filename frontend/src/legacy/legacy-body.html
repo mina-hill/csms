@@ -203,7 +203,7 @@
     <div class="view" id="view-brada">
       <div class="vtop">
         <div class="vtop-row">
-          <div><div class="vtitle">Brada Management</div><div class="vsub">Brada purchases only (no stock/usage tracking)</div></div>
+          <div><div class="vtitle">Brada Management</div><div class="vsub">Stock = total purchased − total used (bags)</div></div>
           <div style="display:flex;gap:8px">
             <button class="btn btn-outline btn-sm" id="btn-brada-use" style="display:none">📤 Record Usage</button>
             <button class="btn btn-primary btn-sm" id="btn-brada-buy">＋ Purchase Brada</button>
@@ -766,6 +766,7 @@
     <div class="mh"><div><div class="mt">Purchase Brada</div><div class="mt-sub">US-009 — Record inward brada stock</div></div><button class="mx" data-close="m-brada-buy">×</button></div>
     <div class="mb">
       <div class="fr">
+        <div class="fg" id="fg-bb-f"><label class="fl">Flock *</label><select class="fi" id="bb-flock"><option value="">— Select Active Flock —</option></select><span class="ferr">Required</span></div>
         <div class="fg" id="fg-bb-s"><label class="fl">Supplier *</label><select class="fi" id="bb-sup"><option value="">— Select —</option></select><span class="ferr">Required</span></div>
         <div class="fg" id="fg-bb-d"><label class="fl">Purchase Date *</label><input class="fi" id="bb-date" type="date"><span class="ferr">Required</span></div>
       </div>

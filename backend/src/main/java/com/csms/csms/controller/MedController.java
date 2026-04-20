@@ -50,6 +50,9 @@ public class MedController {
             request.getQuantity(),
             request.getUnitCost()
         );
+        if (request.getUnit() != null && !request.getUnit().isBlank()) {
+            purchase.setUnit(request.getUnit().trim());
+        }
         purchase.setRecordedBy(request.getRecordedBy());
         return ResponseEntity.status(HttpStatus.CREATED).body(medicinePurchaseRepository.save(purchase));
     }
@@ -79,6 +82,12 @@ public class MedController {
             request.getRecordDate(),
             request.getDosage()
         );
+        if (request.getUnit() != null && !request.getUnit().isBlank()) {
+            usage.setUnit(request.getUnit().trim());
+        }
+        if (request.getNotes() != null) {
+            usage.setNotes(request.getNotes());
+        }
         usage.setRecordedBy(request.getRecordedBy());
         return ResponseEntity.status(HttpStatus.CREATED).body(medicineUsageRepository.save(usage));
     }
@@ -110,6 +119,7 @@ class MedicinePurchaseRequest {
     private LocalDate purchaseDate;
     private Integer quantity;
     private java.math.BigDecimal unitCost;
+    private String unit;
     private UUID recordedBy;
 
     public UUID getMedicineId() { return medicineId; }
@@ -122,6 +132,8 @@ class MedicinePurchaseRequest {
     public void setQuantity(Integer quantity) { this.quantity = quantity; }
     public java.math.BigDecimal getUnitCost() { return unitCost; }
     public void setUnitCost(java.math.BigDecimal unitCost) { this.unitCost = unitCost; }
+    public String getUnit() { return unit; }
+    public void setUnit(String unit) { this.unit = unit; }
     public UUID getRecordedBy() { return recordedBy; }
     public void setRecordedBy(UUID recordedBy) { this.recordedBy = recordedBy; }
 }
@@ -131,6 +143,8 @@ class MedicineUsageRequest {
     private UUID medicineId;
     private LocalDate recordDate;
     private java.math.BigDecimal dosage;
+    private String unit;
+    private String notes;
     private UUID recordedBy;
 
     public UUID getFlockId() { return flockId; }
@@ -141,6 +155,10 @@ class MedicineUsageRequest {
     public void setRecordDate(LocalDate recordDate) { this.recordDate = recordDate; }
     public java.math.BigDecimal getDosage() { return dosage; }
     public void setDosage(java.math.BigDecimal dosage) { this.dosage = dosage; }
+    public String getUnit() { return unit; }
+    public void setUnit(String unit) { this.unit = unit; }
+    public String getNotes() { return notes; }
+    public void setNotes(String notes) { this.notes = notes; }
     public UUID getRecordedBy() { return recordedBy; }
     public void setRecordedBy(UUID recordedBy) { this.recordedBy = recordedBy; }
 }

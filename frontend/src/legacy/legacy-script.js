@@ -179,6 +179,269 @@ function hydrateMedStockFromApi(items){
   medStock = next;
 }
 
+function flockByUiId(uiId){
+  return flocks.find(function(f){ return String(f.id)===String(uiId); });
+}
+function flockDbUuid(uiId){
+  var f=flockByUiId(uiId);
+  return f && f.flockDbId ? String(f.flockDbId) : null;
+}
+function flockUiIdFromDbUuid(uuid){
+  if(!uuid)return '';
+  var u=String(uuid);
+  var f=flocks.find(function(x){ return String(x.flockDbId)===u; });
+  return f ? f.id : '';
+}
+function feedTypeNameById(id){
+  id=String(id||'');
+  var keys=Object.keys(feedStock);
+  for(var i=0;i<keys.length;i++){
+    var ft=feedStock[keys[i]];
+    if(ft&&String(ft.id)===id)return keys[i];
+  }
+  return '';
+}
+function medicineNameById(id){
+  id=String(id||'');
+  var keys=Object.keys(medStock);
+  for(var i=0;i<keys.length;i++){
+    var m=medStock[keys[i]];
+    if(m&&String(m.id)===id)return keys[i];
+  }
+  return '';
+}
+function applyMortalityCumulative(){
+  var byFlock={};
+  mortalities.slice().sort(function(a,b){ return (a.date||'').localeCompare(b.date||''); }).forEach(function(m){
+    byFlock[m.flockId]=(byFlock[m.flockId]||0)+(m.count||0);
+    m.cumulative=byFlock[m.flockId];
+  });
+}
+async function loadMortalityFromApi(){
+  try{
+    var res=await api('/mortality');
+    if(!res.ok)return;
+    var rows=toArrayPayload(await res.json());
+    var groups={};
+    rows.forEach(function(m){
+      var fid=flockUiIdFromDbUuid(m.flockId);
+      if(!fid)return;
+      var d=(m.recordDate||'').toString().slice(0,10);
+      var k=fid+'|'+d;
+      if(!groups[k]){
+        groups[k]={id:'MRT-'+k,flockId:fid,date:d,day:0,night:0,count:0,type:'Recorded',notes:'',time:now(),editor:EDITOR,cumulative:0};
+      }
+      var c=Number(m.count||0);
+      var sh=String(m.shift||'').toUpperCase();
+      if(sh==='DAY')groups[k].day+=c;
+      else if(sh==='NIGHT')groups[k].night+=c;
+      else groups[k].day+=c;
+      groups[k].count=groups[k].day+groups[k].night;
+    });
+    mortalities=Object.keys(groups).map(function(k){ return groups[k]; });
+    applyMortalityCumulative();
+  }catch(_e){}
+}
+async function loadWeightsFromApi(){
+  try{
+    var res=await api('/weights');
+    if(!res.ok)return;
+    var rows=toArrayPayload(await res.json());
+    weeklyRecords=rows.map(function(w){
+      var fid=flockUiIdFromDbUuid(w.flockId);
+      if(!fid)return null;
+      var date=(w.recordDate||'').toString().slice(0,10);
+      var avgG=w.avgWeightKg!=null?Number(w.avgWeightKg)*1000:0;
+      var age=chickAgeDays(fid,date);
+      var ft=flockByUiId(fid);
+      var totalChicks=ft?ft.origQty:0;
+      var totalMort=totalMortalityForFlock(fid);
+      var remaining=Math.max(0,totalChicks-totalMort);
+      var startDateObj=new Date(date+'T00:00:00');startDateObj.setDate(startDateObj.getDate()-6);
+      var start=startDateObj.getFullYear()+'-'+pad(startDateObj.getMonth()+1)+'-'+pad(startDateObj.getDate());
+      var feedKg=feedUsedKgForFlockBetween(fid,start,date);
+      var liveKg=remaining*(avgG/1000);
+      var fcr=(feedKg>0&&liveKg>0)?(liveKg/feedKg):null;
+      return {
+        id:w.weightId||w.id,
+        flockId:fid,
+        date:date,
+        ageDays:age,
+        totalChicks:totalChicks,
+        totalMortality:totalMort,
+        remainingChicks:remaining,
+        feedUsedKg:feedKg,
+        avgWeightG:avgG,
+        fcr:fcr,
+        notes:'',
+        time:now(),
+        editor:EDITOR
+      };
+    }).filter(function(r){ return r!=null; });
+  }catch(_e){}
+}
+async function loadFeedTxnsFromApi(){
+  try{
+    var purRes=await api('/feed/purchases');
+    var useRes=await api('/feed/usage');
+    var salRes=await api('/feed/sales');
+    if(!purRes.ok||!useRes.ok||!salRes.ok)return;
+    var pur=toArrayPayload(await purRes.json());
+    var use=toArrayPayload(await useRes.json());
+    var sal=toArrayPayload(await salRes.json());
+    var next=[];
+    pur.forEach(function(p){
+      var name=feedTypeNameById(p.feedTypeId);
+      var qty=p.sackCount!=null?p.sackCount:p.sacksQty;
+      next.push({id:'FP-'+p.purchaseId,type:'Purchase',feedType:name||String(p.feedTypeId),supId:p.supplierId,supName:'',qty:qty,cost:Number(p.totalCost||0),costPerSack:Number(p.costPerSack||0),date:(p.purchaseDate||'').toString().slice(0,10),time:now()});
+    });
+    use.forEach(function(u){
+      var name=feedTypeNameById(u.feedTypeId);
+      var fid=flockUiIdFromDbUuid(u.flockId);
+      var udate=(u.usageDate||u.recordDate||'').toString().slice(0,10);
+      next.push({id:'FU-'+u.usageId,type:'Usage',feedType:name||String(u.feedTypeId),flockId:fid,flockName:'',qty:u.sacksUsed,date:udate,time:now()});
+    });
+    sal.forEach(function(s){
+      var name=feedTypeNameById(s.feedTypeId);
+      var sacks=s.sacksSold!=null?s.sacksSold:s.sacksQty;
+      next.push({id:'FSL-'+s.saleId,type:'Sale',feedType:name||String(s.feedTypeId),buyer:s.buyerName,qty:sacks,cost:Number(s.totalRevenue||0),date:(s.saleDate||'').toString().slice(0,10),time:now()});
+    });
+    feedTxns=next;
+  }catch(_e){}
+}
+async function loadMedTxnsFromApi(){
+  try{
+    var purRes=await api('/medicine/purchases');
+    var useRes=await api('/medicine/usage');
+    if(!purRes.ok||!useRes.ok)return;
+    var pur=toArrayPayload(await purRes.json());
+    var use=toArrayPayload(await useRes.json());
+    var next=[];
+    pur.forEach(function(p){
+      var name=medicineNameById(p.medicineId);
+      next.push({id:'MP-'+p.purchaseId,type:'Purchase',medicine:name||String(p.medicineId),supId:p.supplierId,supName:'',qty:p.quantity,cost:Number(p.totalCost||0),unit:p.unit||'',date:(p.purchaseDate||'').toString().slice(0,10),time:now()});
+    });
+    use.forEach(function(u){
+      var name=medicineNameById(u.medicineId);
+      var fid=flockUiIdFromDbUuid(u.flockId);
+      var udate=(u.usageDate||u.recordDate||'').toString().slice(0,10);
+      next.push({id:'MU-'+u.usageId,type:'Usage',medicine:name||String(u.medicineId),flockId:fid,qty:Number(u.dosage||0),unit:u.unit||'',notes:u.notes||'',date:udate,time:now()});
+    });
+    medTxns=next;
+  }catch(_e){}
+}
+function mapFlockSaleFromApi(s){
+  var fid=flockUiIdFromDbUuid(s.flockId);
+  var qty=Number(s.qtySold||0);
+  var wpb=Number(s.weightPerBirdKg||0);
+  var ppk=Number(s.pricePerKg||0);
+  var netW=qty*wpb;
+  var total=Number(s.totalAmount||0);
+  return {
+    id:s.saleId||s.id,
+    flockId:fid,
+    date:(s.saleDate||'').toString().slice(0,10),
+    buyer:s.buyerName||'',
+    qtyKg:qty,
+    vehicle:'—',
+    emptyW:0,
+    loadedW:0,
+    netW:netW,
+    rate:ppk,
+    gross:netW*ppk,
+    less:0,
+    commission:0,
+    total:total,
+    notes:'',
+    time:now(),
+    editor:EDITOR
+  };
+}
+async function loadFlockSalesFromApi(){
+  try{
+    var res=await api('/sales/flock');
+    if(!res.ok)return;
+    var rows=toArrayPayload(await res.json());
+    flockSales=rows.map(mapFlockSaleFromApi);
+  }catch(_e){}
+}
+function expenseEnumToUi(cat){
+  var map={UTILITY:'Electricity',FUEL:'Fuel',LABOR:'Labour',MAINTENANCE:'Maintenance',MISCELLANEOUS:'Miscellaneous'};
+  var k=(cat||'').toString().toUpperCase();
+  return map[k]||cat||'Miscellaneous';
+}
+function uiExpenseToEnum(cat){
+  var c=(cat||'').trim().toLowerCase();
+  if(c.indexOf('fuel')>=0)return 'FUEL';
+  if(c.indexOf('labour')>=0||c.indexOf('labor')>=0)return 'LABOR';
+  if(c.indexOf('maintenance')>=0)return 'MAINTENANCE';
+  if(c.indexOf('electricity')>=0||c.indexOf('water')>=0)return 'UTILITY';
+  return 'MISCELLANEOUS';
+}
+function mapExpenseFromApi(e){
+  return {
+    id:e.expenseId||e.id,
+    cat:expenseEnumToUi(e.category),
+    desc:e.description||'',
+    units:1,
+    rate:Number(e.amount||0),
+    amount:Number(e.amount||0),
+    date:(e.expenseDate||'').toString().slice(0,10),
+    flockId:e.flockId?flockUiIdFromDbUuid(e.flockId):'',
+    time:now(),
+    editor:EDITOR
+  };
+}
+async function loadExpensesFromApi(){
+  try{
+    var res=await api('/expenses');
+    if(!res.ok)return;
+    var rows=toArrayPayload(await res.json());
+    expenses=rows.map(mapExpenseFromApi);
+  }catch(_e){}
+}
+async function loadBradaFromApi(){
+  try{
+    var res=await api('/brada/purchases');
+    if(!res.ok)return;
+    var rows=toArrayPayload(await res.json());
+    bradaTxns=rows.map(function(p){
+      var sup=suppliers.find(function(s){ return String(s.id)===String(p.supplierId); });
+      return {
+        id:'BT-'+p.purchaseId,
+        type:'Purchase',
+        flockId:flockUiIdFromDbUuid(p.flockId),
+        supId:p.supplierId,
+        supName:sup?sup.name:'',
+        qty:p.quantity,
+        cost:Number(p.totalCost||0),
+        date:(p.purchaseDate||'').toString().slice(0,10),
+        time:now()
+      };
+    });
+  }catch(_e){}
+}
+function mapSystemAuditFromApi(a){
+  return {
+    module:(a.tableName||'system')+' / '+(a.action||''),
+    action:a.action||'',
+    detail:(a.details||'').slice(0,500),
+    diff:[],
+    time:a.loggedAt?new Date(a.loggedAt).toLocaleString('en-GB'):now(),
+    editor:'System'
+  };
+}
+async function loadSystemAuditFromApi(){
+  try{
+    var res=await api('/audit');
+    if(!res.ok)return;
+    var rows=toArrayPayload(await res.json());
+    var remote=rows.map(mapSystemAuditFromApi);
+    var localOnly=(auditLog||[]).filter(function(e){ return e && e._local; });
+    auditLog=remote.concat(localOnly);
+  }catch(_e){}
+}
+
 function uiOtherSaleCategoryToApi(cat){
   var map = {
     'Manure':'MANURE',
@@ -206,11 +469,11 @@ function apiOtherSaleCategoryToUi(cat){
 
 function mapOtherSaleFromApi(s){
   return {
-    id: s.id,
-    date: s.saleDate,
+    id: s.id || s.saleId,
+    date: (s.saleDate || '').toString().slice(0,10),
     category: apiOtherSaleCategoryToUi(s.category),
     desc: s.description || '',
-    buyer: s.buyer || '',
+    buyer: s.buyerName != null ? s.buyerName : (s.buyer || ''),
     amount: Number(s.amount || 0),
     time: s.createdAt || now(),
     editor: EDITOR
@@ -241,9 +504,10 @@ function mapPayrollReportFromApi(r){
 
 async function loadOtherSalesFromApi(){
   try{
-    var res = await api('/other-sales');
+    var res = await api('/sales/other');
+    if(!res.ok) res = await api('/other-sales');
     if(!res.ok)return;
-    var dbSales = await res.json();
+    var dbSales = toArrayPayload(await res.json());
     var mapped = dbSales.map(mapOtherSaleFromApi);
     var localOnly = otherSales.filter(function(s){ return String(s.id||'').indexOf('OS-')===0; });
     otherSales = mapped.concat(localOnly);
@@ -389,10 +653,18 @@ async function loadInitialData(){
     toast('Using local worker data (backend unavailable).','t-info');
   }
 
+  await loadSystemAuditFromApi();
   await loadFlocksFromApi();
   await loadFeedTypesFromApi();
+  await loadFeedTxnsFromApi();
+  await loadMortalityFromApi();
   await loadMedicinesFromApi();
+  await loadMedTxnsFromApi();
+  await loadWeightsFromApi();
+  await loadBradaFromApi();
+  await loadFlockSalesFromApi();
   await loadOtherSalesFromApi();
+  await loadExpensesFromApi();
   await loadPayrollRunsFromApi();
 }
 
@@ -416,12 +688,25 @@ function remainingChicksForFlock(flockId){
   if(!f)return null;
   return Math.max(0,(f.origQty||0)-totalMortalityForFlock(flockId));
 }
-function feedUsedKgForFlockBetween(flockId,startDate,endDate){
+function feedSacksForFlockBetween(flockId,startDate,endDate){
   if(!flockId||!startDate||!endDate)return 0;
-  var sacks=feedTxns.filter(function(t){
+  return feedTxns.filter(function(t){
     return t.type==='Usage'&&t.flockId===flockId&&t.date&&t.date>=startDate&&t.date<=endDate;
   }).reduce(function(s,t){return s+(t.qty||0);},0);
-  return sacks*50;
+}
+function cumulativeFeedSacksThrough(flockId,endDate){
+  if(!flockId||!endDate)return 0;
+  return feedTxns.filter(function(t){
+    return t.type==='Usage'&&t.flockId===flockId&&t.date&&t.date<=endDate;
+  }).reduce(function(s,t){return s+(t.qty||0);},0);
+}
+function weekNumberForFlockDate(flockId,recordDate){
+  var age=chickAgeDays(flockId,recordDate);
+  if(age===null||age<1)return 1;
+  return Math.max(1,Math.ceil(age/7));
+}
+function feedUsedKgForFlockBetween(flockId,startDate,endDate){
+  return feedSacksForFlockBetween(flockId,startDate,endDate)*50;
 }
 function monthName(m){return ['','January','February','March','April','May','June','July','August','September','October','November','December'][m];}
 function totalRevenue(){
@@ -438,9 +723,9 @@ document.querySelectorAll('.nav-item').forEach(function(btn){
     btn.classList.add('on');
     var v=btn.getAttribute('data-view');
     $('view-'+v).classList.add('on');
-    var render={dashboard:renderDash,flocks:function(){loadFlocksFromApi().then(renderFlocks);},daily:renderDaily,sales:function(){loadOtherSalesFromApi().then(renderSalesView);},
-      feed:function(){loadFeedTypesFromApi().then(renderFeed);},medicine:function(){loadMedicinesFromApi().then(renderMedicine);},brada:renderBrada,expenses:renderExpenses,
-      payroll:renderPayroll,suppliers:renderSuppliers,audit:renderAudit};
+    var render={dashboard:renderDash,flocks:function(){loadFlocksFromApi().then(renderFlocks);},daily:function(){Promise.all([loadMortalityFromApi(),loadFeedTxnsFromApi(),loadWeightsFromApi()]).then(renderDaily);},sales:function(){Promise.all([loadFlockSalesFromApi(),loadOtherSalesFromApi()]).then(renderSalesView);},
+      feed:function(){Promise.all([loadFeedTypesFromApi(),loadFeedTxnsFromApi()]).then(renderFeed);},medicine:function(){Promise.all([loadMedicinesFromApi(),loadMedTxnsFromApi()]).then(renderMedicine);},brada:function(){loadBradaFromApi().then(renderBrada);},expenses:function(){loadExpensesFromApi().then(renderExpenses);},
+      payroll:renderPayroll,suppliers:renderSuppliers,audit:function(){loadSystemAuditFromApi().then(renderAudit);}};
     if(render[v])render[v]();
     if(v==='reports')renderReport(document.querySelector('.tab-pill.on[data-rtab]')&&document.querySelector('.tab-pill.on[data-rtab]').getAttribute('data-rtab')||'mortality');
   });
@@ -454,7 +739,7 @@ document.addEventListener('click',function(e){
 //  AUDIT LOG
 // ════════════════════════════════════════════════════
 function addLog(module,action,detail,diff){
-  auditLog.unshift({module:module,action:action,detail:detail||'',diff:diff||[],time:now(),editor:EDITOR});
+  auditLog.unshift({module:module,action:action,detail:detail||'',diff:diff||[],time:now(),editor:EDITOR,_local:true});
   if(document.getElementById('view-dashboard').classList.contains('on'))renderDash();
 }
 function dotCls(a){
@@ -738,7 +1023,7 @@ function calcMort24(){
   $('mort-24').textContent=String(d+n);
 }
 ['mort-day','mort-night'].forEach(function(id){$(id).addEventListener('input',calcMort24);});
-$('do-mort').addEventListener('click',function(){
+$('do-mort').addEventListener('click',async function(){
   var flockId=$('mort-flock').value,date=$('mort-date').value;
   var day=parseInt($('mort-day').value,10),night=parseInt($('mort-night').value,10);
   var mtype=$('mort-type').value;
@@ -755,11 +1040,27 @@ $('do-mort').addEventListener('click',function(){
   if(!ok)return;
   var f=flocks.find(function(x){return x.id===flockId;});
   if(count>f.qty){toast('Count exceeds remaining birds!','t-bad');return;}
-  var cumMort=mortalities.filter(function(m){return m.flockId===flockId;}).reduce(function(s,m){return s+m.count;},0)+count;
-  var rec={id:'MRT-'+String(morSeq++).padStart(4,'0'),flockId:flockId,date:date,day:day,night:night,count:count,type:mtype,cumulative:cumMort,notes:notes,time:now(),editor:EDITOR};
-  mortalities.push(rec);
-  f.qty=Math.max(0,f.origQty-cumMort);
-  addLog(flockId,'Mortality Recorded',count+' deaths ('+mtype+') on '+fmt(date)+'. Cumulative: '+cumMort);
+  var fidDb=flockDbUuid(flockId);
+  if(!fidDb){toast('Flock is not linked to backend (missing id).','t-bad');return;}
+  if(count<1){toast('Enter day and/or night mortality.','t-bad');return;}
+  var detailNote=(notes?notes+' · ':'')+mtype;
+  try{
+    if(day>0){
+      var r1=await api('/mortality',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({flockId:fidDb,recordDate:date,count:day,shift:'DAY'})});
+      if(!r1.ok){var t1=await r1.text().catch(function(){return '';});toast('Mortality (day) failed: '+(t1||r1.status),'t-bad');return;}
+    }
+    if(night>0){
+      var r2=await api('/mortality',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({flockId:fidDb,recordDate:date,count:night,shift:'NIGHT'})});
+      if(!r2.ok){var t2=await r2.text().catch(function(){return '';});toast('Mortality (night) failed: '+(t2||r2.status),'t-bad');return;}
+    }
+  }catch(_e){
+    toast('Backend not reachable for mortality.','t-bad');
+    return;
+  }
+  await loadMortalityFromApi();
+  await loadFlocksFromApi();
+  var cumMort=totalMortalityForFlock(flockId);
+  addLog(flockId,'Mortality Recorded',count+' deaths ('+mtype+') on '+fmt(date)+'. Cumulative: '+cumMort+(detailNote?'. '+detailNote:''));
   closeM('m-mort');toast('Mortality recorded.','t-ok');renderDaily();renderFlocks();renderDash();
 });
 
@@ -799,7 +1100,7 @@ $('btn-weekly').addEventListener('click',function(){
   openM('m-weight');
 });
 ['wt-flock','wt-date','wt-weight'].forEach(function(id){$(id).addEventListener('change',updateWeeklyModalCalcs);$(id).addEventListener('input',updateWeeklyModalCalcs);});
-$('do-weight').addEventListener('click',function(){
+$('do-weight').addEventListener('click',async function(){
   var flockId=$('wt-flock').value,date=$('wt-date').value,avgG=parseFloat($('wt-weight').value),notes=$('wt-notes').value.trim();
   var ok=true;
   inv('fg-wt-f',!flockId);if(!flockId)ok=false;
@@ -807,18 +1108,41 @@ $('do-weight').addEventListener('click',function(){
   inv('fg-wt-w',!avgG||avgG<1);if(!avgG||avgG<1)ok=false;
   if(!ok)return;
   if(avgG>10000)if(!confirm('Weight of '+avgG+'g seems very high. Continue?'))return;
+  var fidDb=flockDbUuid(flockId);
+  if(!fidDb){toast('Flock is not linked to backend (missing id).','t-bad');return;}
+  var wk=weekNumberForFlockDate(flockId,date);
+  var avgKg=avgG/1000;
+  try{
+    var wr=await api('/weights',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({flockId:fidDb,weekNumber:wk,recordDate:date,avgWeightKg:avgKg})});
+    if(!wr.ok){var wt=await wr.text().catch(function(){return '';});toast('Weekly weight failed: '+(wt||wr.status),'t-bad');return;}
+  }catch(_e){
+    toast('Backend not reachable for weekly weight.','t-bad');
+    return;
+  }
+  var startDateObj=new Date(date+'T00:00:00');startDateObj.setDate(startDateObj.getDate()-6);
+  var start=startDateObj.getFullYear()+'-'+pad(startDateObj.getMonth()+1)+'-'+pad(startDateObj.getDate());
+  var weeklySacks=feedSacksForFlockBetween(flockId,start,date);
+  var cumSacks=cumulativeFeedSacksThrough(flockId,date);
+  try{
+    var sr=await api('/weekly-summary',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      flockId:fidDb,
+      weekNumber:wk,
+      weekEndDate:date,
+      weeklyFeedSacks:weeklySacks,
+      cumulativeFeedSacks:cumSacks
+    })});
+    if(!sr.ok){ /* snapshot optional */ }
+  }catch(_e){ /* ignore */ }
+  await loadWeightsFromApi();
+  await loadFlocksFromApi();
   var age=chickAgeDays(flockId,date);
   var totalChicks=(flocks.find(function(f){return f.id===flockId;})||{}).origQty||0;
   var totalMort=totalMortalityForFlock(flockId);
   var remaining=Math.max(0,totalChicks-totalMort);
-  var end=date;
-  var startDateObj=new Date(date+'T00:00:00');startDateObj.setDate(startDateObj.getDate()-6);
-  var start=startDateObj.getFullYear()+'-'+pad(startDateObj.getMonth()+1)+'-'+pad(startDateObj.getDate());
-  var feedKg=feedUsedKgForFlockBetween(flockId,start,end);
+  var feedKg=feedUsedKgForFlockBetween(flockId,start,date);
   var liveKg=remaining*(avgG/1000);
   var fcr=(feedKg>0&&liveKg>0)?(liveKg/feedKg):null;
-  weeklyRecords.push({id:'WK-'+String(wtSeq++).padStart(4,'0'),flockId:flockId,date:date,ageDays:age,totalChicks:totalChicks,totalMortality:totalMort,remainingChicks:remaining,feedUsedKg:feedKg,avgWeightG:avgG,fcr:fcr,notes:notes,time:now(),editor:EDITOR});
-  addLog(flockId,'Weekly Record',fmt(date)+': '+avgG+'g, feed '+feedKg+'kg, FCR '+(fcr!==null?fcr.toFixed(3):'—'));
+  addLog(flockId,'Weekly Record',fmt(date)+': '+avgG+'g, feed '+feedKg+'kg, FCR '+(fcr!==null?fcr.toFixed(3):'—')+(notes?'. '+notes:''));
   closeM('m-weight');toast('Weekly record saved.','t-ok');renderDaily();renderDash();
 });
 
@@ -896,7 +1220,7 @@ $('fs-flock').addEventListener('change',function(){
   var f=this.value&&flocks.find(function(x){return x.id===$('fs-flock').value;});
   $('fs-hint').textContent=f?'Remaining birds (after mortality): '+f.qty:'';
 });
-$('do-fsale').addEventListener('click',function(){
+$('do-fsale').addEventListener('click',async function(){
   var flockId=$('fs-flock').value,date=$('fs-date').value,buyer=$('fs-buyer').value.trim();
   var qtyKg=parseFloat($('fs-qtykg').value);
   var vehicle=$('fs-veh').value.trim();
@@ -916,7 +1240,24 @@ $('do-fsale').addEventListener('click',function(){
   var netW=Math.max(0,loadedW-emptyW);
   var gross=netW*rate;
   var total=Math.max(0,gross-less-commission);
-  flockSales.push({id:'FS-'+String(fsSeq++).padStart(4,'0'),flockId:flockId,date:date,buyer:buyer,qtyKg:qtyKg,vehicle:vehicle,emptyW:emptyW,loadedW:loadedW,netW:netW,rate:rate,gross:gross,less:less,commission:commission,total:total,notes:$('fs-notes').value.trim(),time:now(),editor:EDITOR});
+  var fidDb=flockDbUuid(flockId);
+  if(!fidDb){toast('Flock is not linked to backend.','t-bad');return;}
+  try{
+    var fr=await api('/sales/flock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      flockId:fidDb,
+      saleDate:date,
+      buyerName:buyer,
+      qtySold:1,
+      weightPerBirdKg:netW,
+      pricePerKg:rate
+    })});
+    if(!fr.ok){var ft=await fr.text().catch(function(){return '';});toast('Flock sale failed: '+(ft||fr.status),'t-bad');return;}
+    await loadFlockSalesFromApi();
+    await loadFlocksFromApi();
+  }catch(_e){
+    toast('Backend not reachable for flock sale.','t-bad');
+    return;
+  }
   addLog(flockId,'Flock Sale','Net '+netW+'kg to '+buyer+' for '+rupees(total));
   closeM('m-fsale');toast('Sale recorded: '+rupees(total),'t-ok');renderSalesView();renderFlocks();renderDash();
 });
@@ -933,19 +1274,34 @@ $('do-osale').addEventListener('click',async function(){
   inv('fg-os-d',!date);if(!date)ok=false;inv('fg-os-cat',!cat);if(!cat)ok=false;
   inv('fg-os-desc',!desc);if(!desc)ok=false;inv('fg-os-amt',!amount||amount<=0);if(!amount||amount<=0)ok=false;
   if(!ok)return;
-  var payload={
+  var buyerStr=$('os-buyer').value.trim()||null;
+  var payloadNew={
     saleDate:date,
     category:uiOtherSaleCategoryToApi(cat),
     description:desc,
-    buyer:$('os-buyer').value.trim(),
+    buyerName:buyerStr,
+    amount:amount
+  };
+  var payloadLegacy={
+    saleDate:date,
+    category:uiOtherSaleCategoryToApi(cat),
+    description:desc,
+    buyer:buyerStr,
     amount:amount
   };
   try{
-    var createRes=await api('/other-sales',{
+    var createRes=await api('/sales/other',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(payload)
+      body:JSON.stringify(payloadNew)
     });
+    if(!createRes.ok){
+      createRes=await api('/other-sales',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(payloadLegacy)
+      });
+    }
     if(!createRes.ok){toast('Failed to save other sale in backend.','t-bad');return;}
     await loadOtherSalesFromApi();
   }catch(_err){
@@ -1270,16 +1626,26 @@ $('do-feed-buy').addEventListener('click',async function(){
   inv('fg-fb-s',!supId);if(!supId)ok=false;inv('fg-fb-ft',!type);if(!type)ok=false;
   inv('fg-fb-q',!qty||qty<1);if(!qty||qty<1)ok=false;inv('fg-fb-c',!cost||cost<1);if(!cost||cost<1)ok=false;
   inv('fg-fb-d',!date);if(!date)ok=false;if(!ok)return;
+  var ft=feedStock[type];
+  if(!ft||!ft.id){toast('Select a feed type that exists in inventory.','t-bad');return;}
   try{
+    var pr=await api('/feed/purchases',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      feedTypeId:ft.id,
+      supplierId:supId,
+      purchaseDate:date,
+      sacksQty:qty,
+      costPerSack:cost
+    })});
+    if(!pr.ok){var pt=await pr.text().catch(function(){return '';});toast('Feed purchase failed: '+(pt||pr.status),'t-bad');return;}
     await adjustFeedStockInBackend(type, qty, (feedStock[type] && feedStock[type].threshold) || 5);
     await loadFeedTypesFromApi();
+    await loadFeedTxnsFromApi();
     if(feedStock[type]) feedStock[type].lastPurchase = date;
   }catch(err){
-    toast(err.message || 'Backend stock update failed.','t-bad');
+    toast(err.message || 'Backend feed purchase failed.','t-bad');
     return;
   }
   var sup=suppliers.find(function(s){return s.id===supId;});
-  feedTxns.push({id:'FT-'+String(ftSeq++).padStart(4,'0'),type:'Purchase',feedType:type,supId:supId,supName:sup?sup.name:'',qty:qty,cost:qty*cost,costPerSack:cost,date:date,time:now()});
   addLog('Feed','Purchase',type+': '+qty+' sacks from '+(sup?sup.name:''));
   closeM('m-feed-buy');toast('Feed stock updated.','t-ok');refreshFeedTypeSelects();renderFeed();renderDash();
 });
@@ -1299,17 +1665,26 @@ $('do-feed-use').addEventListener('click',async function(){
   inv('fg-fu-q',!qty||qty<1);if(!qty||qty<1)ok=false;inv('fg-fu-d',!date);if(!date)ok=false;
   if(!ok)return;
   var s=feedStock[type];
+  var fidDb=flockDbUuid(flockId);
+  var ft=feedStock[type];
+  if(!fidDb||!ft||!ft.id){toast('Select a valid flock and feed type.','t-bad');return;}
   if(s&&qty>s.qty){if(!confirm('Using '+qty+' sacks but only '+s.qty+' available. Continue?'))return;}
   try{
+    var ur=await api('/feed/usage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      flockId:fidDb,
+      feedTypeId:ft.id,
+      recordDate:date,
+      sacksUsed:qty
+    })});
+    if(!ur.ok){var ut=await ur.text().catch(function(){return '';});toast('Feed usage failed: '+(ut||ur.status),'t-bad');return;}
     await adjustFeedStockInBackend(type, -qty, s ? s.threshold : 5);
     await loadFeedTypesFromApi();
+    await loadFeedTxnsFromApi();
     if(feedStock[type]) feedStock[type].lastUsage = date;
   }catch(err){
-    toast(err.message || 'Backend stock update failed.','t-bad');
+    toast(err.message || 'Backend feed usage failed.','t-bad');
     return;
   }
-  var f=flocks.find(function(x){return x.id===flockId;});
-  feedTxns.push({id:'FT-'+String(ftSeq++).padStart(4,'0'),type:'Usage',feedType:type,flockId:flockId,flockName:f?f.breed:'',qty:qty,date:date,time:now()});
   addLog(flockId,'Feed Usage',type+': '+qty+' sacks used');
   closeM('m-feed-use');toast('Feed usage saved.','t-ok');renderFeed();renderDash();
 });
@@ -1331,16 +1706,25 @@ $('do-feed-sale').addEventListener('click',async function(){
   inv('fg-fsl-q',!qty||qty<1);if(!qty||qty<1)ok=false;inv('fg-fsl-c',!price||price<1);if(!price||price<1)ok=false;
   inv('fg-fsl-d',!date);if(!date)ok=false;if(!ok)return;
   var s=feedStock[type];if(s&&qty>s.qty){toast('Insufficient stock ('+s.qty+' available)','t-bad');return;}
+  var ft=feedStock[type];
+  if(!ft||!ft.id){toast('Unknown feed type.','t-bad');return;}
   try{
+    var sr=await api('/feed/sales',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      feedTypeId:ft.id,
+      saleDate:date,
+      sacksQty:qty,
+      pricePerSack:price,
+      buyerName:buyer
+    })});
+    if(!sr.ok){var st=await sr.text().catch(function(){return '';});toast('Feed sale failed: '+(st||sr.status),'t-bad');return;}
     await adjustFeedStockInBackend(type, -qty, s ? s.threshold : 5);
     await loadFeedTypesFromApi();
+    await loadFeedTxnsFromApi();
   }catch(err){
-    toast(err.message || 'Backend stock update failed.','t-bad');
+    toast(err.message || 'Backend feed sale failed.','t-bad');
     return;
   }
   var rev=qty*price;
-  feedTxns.push({id:'FT-'+String(ftSeq++).padStart(4,'0'),type:'Sale',feedType:type,buyer:buyer,qty:qty,cost:rev,date:date,time:now()});
-  otherSales.push({id:'OS-'+String(osSeq++).padStart(4,'0'),date:date,category:'Sacks Sale',desc:type+' sacks',buyer:buyer,amount:rev,time:now(),editor:EDITOR});
   addLog('Sales','Sacks Sale',qty+' sacks of '+type+' sold to '+buyer+' for '+rupees(rev));
   closeM('m-feed-sale');toast('Feed sale recorded.','t-ok');renderFeed();renderSalesView();renderDash();
 });
@@ -1432,20 +1816,29 @@ $('do-dfeed').addEventListener('click',async function(){
   inv('fg-df-t',!type);if(!type)ok=false;
   inv('fg-df-day',day<0);inv('fg-df-night',night<0);
   if(!ok)return;
+  if(total<1){toast('Enter day and/or night sacks.','t-bad');return;}
   var s=feedStock[type];
+  var fidDb=flockDbUuid(flockId);
+  var ft=feedStock[type];
+  if(!fidDb||!ft||!ft.id){toast('Select a valid flock and feed type.','t-bad');return;}
   if(s&&total>s.qty){if(!confirm('Using '+total+' sacks but only '+s.qty+' available. Continue?'))return;}
   try{
+    var dr=await api('/feed/usage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      flockId:fidDb,
+      feedTypeId:ft.id,
+      recordDate:date,
+      sacksUsed:total
+    })});
+    if(!dr.ok){var dt=await dr.text().catch(function(){return '';});toast('Daily feed usage failed: '+(dt||dr.status),'t-bad');return;}
     await adjustFeedStockInBackend(type, -total, s ? s.threshold : 5);
     await loadFeedTypesFromApi();
+    await loadFeedTxnsFromApi();
     if(feedStock[type]) feedStock[type].lastUsage = date;
   }catch(err){
-    toast(err.message || 'Backend stock update failed.','t-bad');
+    toast(err.message || 'Backend daily feed failed.','t-bad');
     return;
   }
   dailyFeedRecords.push({id:'DF-'+String(ftSeq++).padStart(4,'0'),flockId:flockId,date:date,feedType:type,daySacks:day,nightSacks:night,totalSacks:total,time:now(),editor:EDITOR});
-  var f=flocks.find(function(x){return x.id===flockId;});
-  if(day>0)feedTxns.push({id:'FT-'+String(ftSeq++).padStart(4,'0'),type:'Usage',feedType:type,flockId:flockId,flockName:f?f.breed:'',qty:day,date:date,timeOfDay:'Day',time:now()});
-  if(night>0)feedTxns.push({id:'FT-'+String(ftSeq++).padStart(4,'0'),type:'Usage',feedType:type,flockId:flockId,flockName:f?f.breed:'',qty:night,date:date,timeOfDay:'Night',time:now()});
   addLog(flockId,'Daily Feed',type+': Day '+day+', Night '+night+' sacks (Total '+total+')');
   closeM('m-dfeed');toast('Daily feed saved.','t-ok');renderFeed();renderDash();
 });
@@ -1576,28 +1969,42 @@ $('do-dmed').addEventListener('click',async function(){
       return;
     }
   }
+  var fidDb=flockDbUuid(flockId);
+  if(!fidDb){toast('Flock is not linked to backend.','t-bad');return;}
   try{
     for(var k=0;k<items.length;k++){
-      var stockItem = medStock[items[k].name];
+      var it=items[k];
+      var stockItem = medStock[it.name];
+      var mid=stockItem&&stockItem.id;
+      if(!mid){toast('Medicine '+it.name+' has no backend id — refresh medicine list.','t-bad');return;}
+      var noteLine=[notes,it.usageTime?'Usage time: '+it.usageTime:''].filter(Boolean).join(' · ');
+      var ur=await api('/medicine/usage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+        flockId:fidDb,
+        medicineId:mid,
+        recordDate:date,
+        dosage:it.qty,
+        unit:it.unit,
+        notes:noteLine||null
+      })});
+      if(!ur.ok){var ut=await ur.text().catch(function(){return '';});toast('Medicine usage failed for '+it.name+': '+(ut||ur.status),'t-bad');return;}
       await adjustMedicineStockInBackend(
-        items[k].name,
-        -items[k].qty,
+        it.name,
+        -it.qty,
         stockItem ? stockItem.threshold : 5,
-        items[k].unit || (stockItem ? stockItem.unit : null)
+        it.unit || (stockItem ? stockItem.unit : null)
       );
     }
     await loadMedicinesFromApi();
+    await loadMedTxnsFromApi();
   }catch(err){
-    toast(err.message || 'Backend stock update failed.','t-bad');
+    toast(err.message || 'Backend daily medicine failed.','t-bad');
     return;
   }
   dailyMedRecords.push({id:'DM-'+String(mdSeq++).padStart(4,'0'),flockId:flockId,date:date,items:items,notes:notes,time:now(),editor:EDITOR});
-  // Also write into inventory transactions (stock deduction)
   items.forEach(function(it){
     var key=it.name;
     var s=medStock[key];
     if(s&&typeof s.qty==='number') s.lastUpdated=date;
-    medTxns.push({id:'MT-'+String(mdSeq++).padStart(4,'0'),type:'Usage',medicine:key,flockId:flockId,qty:it.qty,unit:it.unit,usageTime:it.usageTime,notes:notes,date:date,time:now()});
   });
   addLog(flockId,'Daily Medicine',items.length+' item(s) on '+fmt(date));
   closeM('m-dmed');toast('Daily medicine saved.','t-ok');refreshMedSelects();renderMedicine();renderDash();
@@ -1652,17 +2059,29 @@ $('do-med-buy').addEventListener('click',async function(){
   try{
     await adjustMedicineStockInBackend(name, qty, thresh, resolvedUnit);
     await loadMedicinesFromApi();
+    var mid=medStock[name]&&medStock[name].id;
+    if(mid){
+      var pr=await api('/medicine/purchases',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+        medicineId:mid,
+        supplierId:supId,
+        purchaseDate:date,
+        quantity:qty,
+        unitCost:cost,
+        unit:resolvedUnit
+      })});
+      if(!pr.ok){var pt=await pr.text().catch(function(){return '';});toast('Medicine purchase ledger failed: '+(pt||pr.status),'t-bad');return;}
+    }
     if(!medStock[name]) medStock[name]={qty:0,threshold:thresh,supplier:'',supId:supId,lastUpdated:null,unit:resolvedUnit};
     medStock[name].supId=supId;
     medStock[name].lastUpdated=date;
     medStock[name].unit=resolvedUnit;
+    await loadMedTxnsFromApi();
   }catch(err){
-    toast(err.message || 'Backend stock update failed.','t-bad');
+    toast(err.message || 'Backend medicine purchase failed.','t-bad');
     return;
   }
   var sup=suppliers.find(function(s){return s.id===supId;});
   if(sup)medStock[name].supplier=sup.name;
-  medTxns.push({id:'MT-'+String(mdSeq++).padStart(4,'0'),type:'Purchase',medicine:name,supId:supId,supName:sup?sup.name:'',qty:qty,unit:resolvedUnit,cost:qty*cost,date:date,time:now()});
   addLog('Medicine','Purchase',name+': '+qty+' '+resolvedUnit+' from '+(sup?sup.name:''));
   closeM('m-med-buy');toast('Medicine stock updated.','t-ok');refreshMedSelects();renderMedicine();renderDash();
 });
@@ -1698,15 +2117,27 @@ $('do-med-use').addEventListener('click',async function(){
   if(s&&s.qty===0){toast('No stock available for '+med,'t-bad');return;}
   if(s&&qty>s.qty){toast('Insufficient stock ('+s.qty+' units)','t-bad');return;}
   var resolvedUseUnit=composeMedicineUnitValue(unit,unitOther);
+  var fidDb=flockDbUuid(flockId);
+  var mid=s&&s.id;
+  if(!fidDb||!mid){toast('Flock or medicine id missing — reload from backend.','t-bad');return;}
   try{
+    var ur=await api('/medicine/usage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      flockId:fidDb,
+      medicineId:mid,
+      recordDate:date,
+      dosage:qty,
+      unit:resolvedUseUnit,
+      notes:notes||null
+    })});
+    if(!ur.ok){var ut=await ur.text().catch(function(){return '';});toast('Medicine usage failed: '+(ut||ur.status),'t-bad');return;}
     await adjustMedicineStockInBackend(med, -qty, s ? s.threshold : 5, resolvedUseUnit || (s ? s.unit : null));
     await loadMedicinesFromApi();
+    await loadMedTxnsFromApi();
     if(medStock[med]) medStock[med].lastUpdated = date;
   }catch(err){
-    toast(err.message || 'Backend stock update failed.','t-bad');
+    toast(err.message || 'Backend medicine usage failed.','t-bad');
     return;
   }
-  medTxns.push({id:'MT-'+String(mdSeq++).padStart(4,'0'),type:'Usage',medicine:med,flockId:flockId,qty:qty,unit:resolvedUseUnit,notes:notes,date:date,time:now()});
   if(medStock[med]&&medStock[med].qty<=medStock[med].threshold)toast('⚠️ '+med+' stock is low ('+medStock[med].qty+' units remaining)','t-info');
   addLog(flockId,'Medicine Used',med+': '+qty+' units on '+fmt(date));
   closeM('m-med-use');toast('Medicine usage saved.','t-ok');refreshMedSelects();renderMedicine();renderDash();
@@ -1731,16 +2162,32 @@ function renderMedicine(){
 //  US-009/010/011: BRADA
 // ════════════════════════════════════════════════════
 $('btn-brada-buy').addEventListener('click',function(){
-  fillSupSelect('bb-sup',['Other']);$('bb-qty').value='';$('bb-cost').value='';$('bb-date').value=today();$('bb-total').textContent='₨ —';
-  ['fg-bb-s','fg-bb-q','fg-bb-c','fg-bb-d'].forEach(function(id){inv(id,false);});openM('m-brada-buy');
+  fillSupSelect('bb-sup',['Other']);fillFlockSelect('bb-flock');$('bb-qty').value='';$('bb-cost').value='';$('bb-date').value=today();$('bb-total').textContent='₨ —';
+  ['fg-bb-f','fg-bb-s','fg-bb-q','fg-bb-c','fg-bb-d'].forEach(function(id){inv(id,false);});openM('m-brada-buy');
 });
 ['bb-qty','bb-cost'].forEach(function(id){$(id).addEventListener('input',function(){var q=parseInt($('bb-qty').value)||0,c=parseInt($('bb-cost').value)||0;$('bb-total').textContent=q&&c?rupees(q*c):'₨ —';});});
-$('do-brada-buy').addEventListener('click',function(){
-  var supId=$('bb-sup').value,qty=parseInt($('bb-qty').value),cost=parseInt($('bb-cost').value),date=$('bb-date').value,ok=true;
+$('do-brada-buy').addEventListener('click',async function(){
+  var flockId=$('bb-flock').value,supId=$('bb-sup').value,qty=parseInt($('bb-qty').value),cost=parseInt($('bb-cost').value),date=$('bb-date').value,ok=true;
+  inv('fg-bb-f',!flockId);if(!flockId)ok=false;
   inv('fg-bb-s',!supId);if(!supId)ok=false;inv('fg-bb-q',!qty||qty<1);if(!qty||qty<1)ok=false;
   inv('fg-bb-c',!cost||cost<1);if(!cost||cost<1)ok=false;inv('fg-bb-d',!date);if(!date)ok=false;if(!ok)return;
+  var fidDb=flockDbUuid(flockId);
+  if(!fidDb){toast('Flock is not linked to backend.','t-bad');return;}
+  try{
+    var br=await api('/brada/purchases',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      flockId:fidDb,
+      supplierId:supId,
+      purchaseDate:date,
+      quantity:qty,
+      unitCost:cost
+    })});
+    if(!br.ok){var bt=await br.text().catch(function(){return '';});toast('Brada purchase failed: '+(bt||br.status),'t-bad');return;}
+    await loadBradaFromApi();
+  }catch(_e){
+    toast('Backend not reachable for brada.','t-bad');
+    return;
+  }
   var sup=suppliers.find(function(s){return s.id===supId;});
-  bradaTxns.push({id:'BT-'+String(bbSeq++).padStart(4,'0'),type:'Purchase',supId:supId,supName:sup?sup.name:'',qty:qty,cost:qty*cost,date:date,time:now()});
   addLog('Brada','Purchase',qty+' bags from '+(sup?sup.name:'')+' for '+rupees(qty*cost));
   closeM('m-brada-buy');toast('Brada purchase recorded.','t-ok');renderBrada();renderDash();
 });
@@ -1751,20 +2198,44 @@ $('do-brada-use').addEventListener('click',function(){
   toast('Brada usage tracking is disabled.','t-info');
   closeM('m-brada-use');
 });
-function renderBrada(){
-  // Purchases only (no stock/usage tracking)
-  var totalIn=bradaTxns.filter(function(t){return t.type==='Purchase';}).reduce(function(s,t){return s+t.qty;},0);
+/** Purchases add bags; Usage rows (if any) subtract. Current stock = total purchased − total used. */
+function computeBradaInventory(){
+  var totalIn=bradaTxns.filter(function(t){return t.type==='Purchase';}).reduce(function(s,t){return s+(t.qty||0);},0);
+  var totalOut=bradaTxns.filter(function(t){return t.type==='Usage';}).reduce(function(s,t){return s+(t.qty||0);},0);
+  var stock=Math.max(0,totalIn-totalOut);
   var totalCost=bradaTxns.filter(function(t){return t.type==='Purchase';}).reduce(function(s,t){return s+(t.cost||0);},0);
-  $('brada-stock-val').textContent='—';
-  $('brada-total-in').textContent=totalIn;
-  $('brada-total-out').textContent='—';
-  $('brada-total-cost').textContent=rupees(totalCost);
-  var rows=bradaTxns.filter(function(t){return t.type==='Purchase';}).slice().sort(function(a,b){return b.date.localeCompare(a.date);});
-  $('brada-tbody').innerHTML=rows.length?rows.map(function(t){
-    return '<tr><td>'+fmt(t.date)+'</td><td><strong style="color:var(--green)">'+esc(t.type)+'</strong></td>'
-      +'<td style="color:var(--muted)">'+esc(t.supName||'—')+'</td>'
-      +'<td>'+t.qty+'</td><td>'+(t.cost?rupees(t.cost):'—')+'</td><td style="font-weight:600;font-family:\'DM Mono\',monospace">—</td></tr>';
-  }).join(''):'<tr><td colspan="6"><div class="empty" style="padding:20px"><div class="et">No brada purchases yet.</div></div></td></tr>';
+  var merged=bradaTxns.slice().sort(function(a,b){
+    var c=(a.date||'').localeCompare(b.date||'');
+    if(c!==0)return c;
+    return String(a.id||'').localeCompare(String(b.id||''));
+  });
+  var bal=0;
+  var rowsDesc=[];
+  merged.forEach(function(t){
+    if(t.type==='Purchase')bal+=t.qty||0;
+    else if(t.type==='Usage')bal-=t.qty||0;
+    rowsDesc.push({t:t, balAfter:bal});
+  });
+  rowsDesc.reverse();
+  return {totalIn:totalIn,totalOut:totalOut,stock:stock,totalCost:totalCost,rows:rowsDesc};
+}
+function renderBrada(){
+  var inv=computeBradaInventory();
+  bradaStock=inv.stock;
+  $('brada-stock-val').textContent=String(inv.stock);
+  $('brada-total-in').textContent=String(inv.totalIn);
+  $('brada-total-out').textContent=String(inv.totalOut);
+  $('brada-total-cost').textContent=rupees(inv.totalCost);
+  $('brada-tbody').innerHTML=inv.rows.length?inv.rows.map(function(row){
+    var t=row.t;
+    var typeColor=t.type==='Purchase'?'var(--green)':'var(--accent)';
+    var who=t.type==='Purchase'
+      ? esc(t.flockId||'—')+' · '+esc(t.supName||'—')
+      : esc(t.flockId||'—');
+    return '<tr><td>'+fmt(t.date)+'</td><td><strong style="color:'+typeColor+'">'+esc(t.type)+'</strong></td>'
+      +'<td style="color:var(--muted)">'+who+'</td>'
+      +'<td>'+t.qty+'</td><td>'+(t.cost?rupees(t.cost):'—')+'</td><td style="font-weight:600;font-family:\'DM Mono\',monospace">'+row.balAfter+'</td></tr>';
+  }).join(''):'<tr><td colspan="6"><div class="empty" style="padding:20px"><div class="et">No brada transactions yet.</div></div></td></tr>';
 }
 
 // ════════════════════════════════════════════════════
@@ -1786,7 +2257,7 @@ function calcExpAmount(){
   $('ex-amount').textContent=a>0?rupees(a):'₨ —';
 }
 ['ex-units','ex-rate'].forEach(function(id){$(id).addEventListener('input',calcExpAmount);});
-$('do-exp').addEventListener('click',function(){
+$('do-exp').addEventListener('click',async function(){
   var cat=$('ex-cat').value.trim(),date=$('ex-date').value;
   var units=parseFloat($('ex-units').value),rate=parseFloat($('ex-rate').value);
   var amount=(parseFloat(units)||0)*(parseFloat(rate)||0);
@@ -1796,7 +2267,23 @@ $('do-exp').addEventListener('click',function(){
   inv('fg-ex-r',!rate||rate<=0);if(!rate||rate<=0)ok=false;
   inv('fg-ex-desc',!desc);if(!desc)ok=false;
   if(!ok)return;
-  expenses.push({id:'EX-'+String(expSeq++).padStart(4,'0'),cat:cat,desc:desc,units:units,rate:rate,amount:amount,date:date,flockId:$('ex-flock').value,time:now(),editor:EDITOR});
+  var flockUi=$('ex-flock').value;
+  var fidDb=flockUi?flockDbUuid(flockUi):null;
+  try{
+    var body={
+      category:uiExpenseToEnum(cat),
+      amount:amount,
+      description:desc,
+      expenseDate:date
+    };
+    if(fidDb)body.flockId=fidDb;
+    var er=await api('/expenses',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!er.ok){var et=await er.text().catch(function(){return '';});toast('Expense failed: '+(et||er.status),'t-bad');return;}
+    await loadExpensesFromApi();
+  }catch(_e){
+    toast('Backend not reachable for expense.','t-bad');
+    return;
+  }
   addLog('Expense','Added',cat+': '+rupees(amount)+' — '+desc);
   closeM('m-exp');toast('Expense saved.','t-ok');renderExpenses();renderDash();
 });
@@ -2183,10 +2670,9 @@ function buildResourceReport(){
   });
   // Brada
   if(bradaTxns.length){
-    var bIn=bradaTxns.filter(function(t){return t.type==='Purchase';}).reduce(function(s,t){return s+t.qty;},0);
-    var bOut=bradaTxns.filter(function(t){return t.type==='Usage';}).reduce(function(s,t){return s+t.qty;},0);
-    var bCost=bradaTxns.filter(function(t){return t.type==='Purchase';}).reduce(function(s,t){return s+(t.cost||0);},0);
-    html+='<tr><td><strong>Brada</strong></td><td>'+bIn+' bags</td><td>'+bOut+' bags</td><td>'+bradaStock+' bags</td><td>'+rupees(bCost)+'</td></tr>';
+    var bInv=computeBradaInventory();
+    bradaStock=bInv.stock;
+    html+='<tr><td><strong>Brada</strong></td><td>'+bInv.totalIn+' bags</td><td>'+bInv.totalOut+' bags</td><td>'+bInv.stock+' bags</td><td>'+rupees(bInv.totalCost)+'</td></tr>';
   }
   if(!feedTypes.length&&!Object.keys(medStock).length&&!bradaTxns.length)
     return html+'<tr><td colspan="5"><div class="empty" style="padding:20px"><div class="et">No resource records yet.</div></div></td></tr></tbody></table></div>';
@@ -2213,19 +2699,20 @@ function buildMedSupplierReport(){
 }
 function buildBradaReport(){
   if(!bradaTxns.length)return '<div class="empty" style="padding:40px"><div class="ei">🪨</div><div class="et">No brada records yet.</div></div>';
-  var totalIn=bradaTxns.filter(function(t){return t.type==='Purchase';}).reduce(function(s,t){return s+t.qty;},0);
-  var totalOut=bradaTxns.filter(function(t){return t.type==='Usage';}).reduce(function(s,t){return s+t.qty;},0);
-  var totalCost=bradaTxns.filter(function(t){return t.type==='Purchase';}).reduce(function(s,t){return s+(t.cost||0);},0);
+  var inv=computeBradaInventory();
+  bradaStock=inv.stock;
   var html='<div class="kpi-grid">'
-    +'<div class="kpi"><div class="kpi-lbl">Total Purchased</div><div class="kpi-val">'+totalIn+' bags</div></div>'
-    +'<div class="kpi"><div class="kpi-lbl">Total Used</div><div class="kpi-val">'+totalOut+' bags</div></div>'
-    +'<div class="kpi"><div class="kpi-lbl">Current Balance</div><div class="kpi-val cv-g">'+bradaStock+' bags</div></div></div>';
+    +'<div class="kpi"><div class="kpi-lbl">Total Purchased</div><div class="kpi-val">'+inv.totalIn+' bags</div></div>'
+    +'<div class="kpi"><div class="kpi-lbl">Total Used</div><div class="kpi-val">'+inv.totalOut+' bags</div></div>'
+    +'<div class="kpi"><div class="kpi-lbl">Current Stock</div><div class="kpi-val cv-g">'+inv.stock+' bags</div></div></div>';
   html+='<div class="rpt-section"><div class="rpt-header">Brada Transaction Log</div><table><thead><tr><th>Date</th><th>Type</th><th>Flock / Supplier</th><th>Qty (bags)</th><th>Cost</th><th>Balance</th></tr></thead><tbody>';
-  bradaTxns.slice().sort(function(a,b){return b.date.localeCompare(a.date);}).forEach(function(t){
-    html+='<tr><td>'+fmt(t.date)+'</td><td><strong style="color:'+(t.type==='Purchase'?'var(--green)':'var(--accent)')+'">'+t.type+'</strong></td>'
-      +'<td>'+esc(t.flockId?t.flockId:t.supName||'—')+'</td><td>'+t.qty+'</td><td>'+(t.cost?rupees(t.cost):'—')+'</td><td style="font-weight:600">'+t.balance+'</td></tr>';
+  inv.rows.forEach(function(row){
+    var t=row.t;
+    var who=t.type==='Purchase'?esc(t.flockId||'—')+' · '+esc(t.supName||'—'):esc(t.flockId||'—');
+    html+='<tr><td>'+fmt(t.date)+'</td><td><strong style="color:'+(t.type==='Purchase'?'var(--green)':'var(--accent)')+'">'+esc(t.type)+'</strong></td>'
+      +'<td>'+who+'</td><td>'+t.qty+'</td><td>'+(t.cost?rupees(t.cost):'—')+'</td><td style="font-weight:600">'+row.balAfter+'</td></tr>';
   });
-  html+='<tr class="rpt-total-row"><td colspan="3"><strong>Summary</strong></td><td>In: '+totalIn+' / Out: '+totalOut+'</td><td>'+rupees(totalCost)+'</td><td>'+bradaStock+'</td></tr>';
+  html+='<tr class="rpt-total-row"><td colspan="3"><strong>Summary</strong></td><td>In: '+inv.totalIn+' / Out: '+inv.totalOut+'</td><td>'+rupees(inv.totalCost)+'</td><td>'+inv.stock+'</td></tr>';
   html+='</tbody></table></div>';return html;
 }
 function buildFeedReport(){

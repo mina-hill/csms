@@ -121,7 +121,7 @@ public class SalesController {
      * FIX-9: description is NOT NULL in SQL — validated before save.
      */
     @PostMapping("/other")
-    public ResponseEntity<?> createOtherSale(@RequestBody OtherSaleRequest request) {
+    public ResponseEntity<?> createOtherSale(@RequestBody SalesOtherSaleRequest request) {
         // FIX-9: description is NOT NULL in the other_sales table
         if (request.getDescription() == null || request.getDescription().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "description is required"));
@@ -136,14 +136,14 @@ public class SalesController {
             return ResponseEntity.badRequest().body(Map.of("error", "saleDate is required"));
         }
 
+        String buyer = request.getBuyerName() != null ? request.getBuyerName().trim() : null;
         OtherSale sale = new OtherSale(
+                request.getSaleDate(),
                 request.getCategory(),
-                request.getAmount(),
-                request.getSaleDate()
+                request.getDescription().trim(),
+                buyer,
+                request.getAmount()
         );
-        sale.setDescription(request.getDescription());
-        sale.setBuyerName(request.getBuyerName());
-        sale.setRecordedBy(request.getRecordedBy());
 
         return ResponseEntity.status(HttpStatus.CREATED).body(otherSaleRepository.save(sale));
     }
@@ -228,13 +228,12 @@ class FlockSaleRequest {
 }
 
 // FIX-8: OtherSaleCategory is now a proper import at the top of the file — no inline qualified name.
-class OtherSaleRequest {
+class SalesOtherSaleRequest {
     private OtherSaleCategory category;
     private BigDecimal amount;
     private LocalDate saleDate;
     private String description;
     private String buyerName;
-    private UUID recordedBy;
 
     public OtherSaleCategory getCategory() { return category; }
     public void setCategory(OtherSaleCategory category) { this.category = category; }
@@ -246,8 +245,6 @@ class OtherSaleRequest {
     public void setDescription(String description) { this.description = description; }
     public String getBuyerName() { return buyerName; }
     public void setBuyerName(String buyerName) { this.buyerName = buyerName; }
-    public UUID getRecordedBy() { return recordedBy; }
-    public void setRecordedBy(UUID recordedBy) { this.recordedBy = recordedBy; }
 }
 
 class SalesSummary {
