@@ -1,5 +1,6 @@
 package com.csms.csms.entity;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -53,10 +54,12 @@ public class Supplier {
     }
 
     // Getters & Setters
+    @JsonProperty("id")
     public UUID getSupplierId() {
         return supplierId;
     }
 
+    @JsonProperty("id")
     public void setSupplierId(UUID supplierId) {
         this.supplierId = supplierId;
     }

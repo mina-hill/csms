@@ -317,9 +317,20 @@
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">
         <div class="card" id="sup-list-card">
-          <div class="card-top">
+          <div class="card-top" style="flex-wrap:wrap;gap:10px;align-items:center">
             <span class="card-top-title">Supplier Directory</span>
-            <span style="font-size:0.72rem;color:var(--muted)" id="sup-click-hint">Click a row to view history →</span>
+            <label style="display:flex;align-items:center;gap:8px;font-size:0.78rem;color:var(--muted);margin-left:auto">
+              <span>Filter by type</span>
+              <select class="fi btn-sm" id="sup-type-filter" style="width:auto;min-width:160px">
+                <option value="all">All types</option>
+                <option value="Chicks Supplier">Chicks Supplier</option>
+                <option value="Feed Supplier">Feed Supplier</option>
+                <option value="Medicine Supplier">Medicine Supplier</option>
+                <option value="Equipment Supplier">Equipment Supplier</option>
+                <option value="Other">Other</option>
+              </select>
+            </label>
+            <span style="font-size:0.72rem;color:var(--muted);width:100%" id="sup-click-hint">Click a row to view history →</span>
           </div>
           <div id="sup-list-inner"></div>
         </div>
@@ -621,6 +632,7 @@
   <div class="modal" style="width:460px">
     <div class="mh"><div class="mt" id="sup-modal-title">Add Supplier</div><button class="mx" data-close="m-sup">×</button></div>
     <div class="mb">
+      <input type="hidden" id="supplier-edit-id" value="">
       <div class="fr full"><div class="fg" id="fg-sn"><label class="fl">Name *</label><input class="fi" id="s-name" placeholder="e.g. Golden Poultry Farms"><span class="ferr">Required</span></div></div>
       <div class="fr">
         <div class="fg"><label class="fl">Type</label><select class="fi" id="s-type"><option value="">— Select —</option><option>Chicks Supplier</option><option>Feed Supplier</option><option>Medicine Supplier</option><option>Equipment Supplier</option><option>Other</option></select></div>

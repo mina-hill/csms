@@ -1,5 +1,6 @@
 package com.csms.csms.entity;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -60,10 +61,12 @@ public class Worker {
     }
 
     // Getters & Setters
+    @JsonProperty("id")
     public UUID getWorkerId() {
         return workerId;
     }
 
+    @JsonProperty("id")
     public void setWorkerId(UUID workerId) {
         this.workerId = workerId;
     }

@@ -63,6 +63,12 @@ function fillSupSelect(selId){
 function normalizeSupplierType(t){
   if(!t)return 'Other';
   var x=String(t).trim();
+  var u=x.toUpperCase().replace(/-/g,'_');
+  if(u==='CHICKS')return 'Chicks Supplier';
+  if(u==='FEED')return 'Feed Supplier';
+  if(u==='MEDICINE')return 'Medicine Supplier';
+  if(u==='EQUIPMENT')return 'Equipment Supplier';
+  if(u==='BRADA'||u==='OTHER')return 'Other';
   if(x==='Chicks/Flock'||x==='Chicks'||x==='Flock')return 'Chicks Supplier';
   if(x==='Feed')return 'Feed Supplier';
   if(x==='Medicine')return 'Medicine Supplier';
@@ -71,11 +77,23 @@ function normalizeSupplierType(t){
   if(x==='Brada')return 'Other';
   return x;
 }
+
+function uiTypeToSupplierTypeEnum(label){
+  var map={
+    'Chicks Supplier':'CHICKS',
+    'Feed Supplier':'FEED',
+    'Medicine Supplier':'MEDICINE',
+    'Equipment Supplier':'EQUIPMENT',
+    'Other':'OTHER'
+  };
+  return map[label] || 'OTHER';
+}
 suppliers.forEach(function(s){s.type=normalizeSupplierType(s.type);});
 
 function mapSupplierFromApi(s){
+  var rawId = s.id != null ? s.id : s.supplierId;
   return {
-    id: s.id,
+    id: rawId,
     name: s.name || '',
     type: normalizeSupplierType(s.supplierType || s.type),
     contact: s.phone || s.contact || '',
@@ -86,13 +104,14 @@ function mapSupplierFromApi(s){
 }
 
 function mapWorkerFromApi(w){
+  var rawId = w.id != null ? w.id : w.workerId;
   return {
-    id: w.id,
+    id: rawId,
     name: w.name || '',
     role: w.role || '',
     contact: w.contact || '',
     join: w.joinDate || '',
-    salary: Number(w.salaryRate || 0),
+    salary: Number(w.salaryRate != null ? w.salaryRate : 0),
     status: w.isActive === false ? 'Inactive' : 'Active'
   };
 }
@@ -622,33 +641,41 @@ function renderSalesView(){
 //  US-007: SUPPLIERS
 // ════════════════════════════════════════════════════
 $('btn-add-sup').addEventListener('click',function(){
-  supEditTarget=null;$('sup-modal-title').textContent='Add Supplier';
+  supEditTarget=null;$('supplier-edit-id').value='';
+  $('sup-modal-title').textContent='Add Supplier';
   $('s-name').value='';$('s-type').value='';$('s-contact').value='';$('s-address').value='';
   inv('fg-sn',false);$('fg-sdup').style.display='none';openM('m-sup');
 });
 $('do-sup').addEventListener('click',async function(){
   var name=$('s-name').value.trim();
   inv('fg-sn',!name);if(!name)return;
-  var dup=suppliers.find(function(s){return s.name.toLowerCase()===name.toLowerCase()&&s.id!==supEditTarget;});
+  var editId = ($('supplier-edit-id').value || '').trim();
+  var dup=suppliers.find(function(s){
+    return s.name.toLowerCase()===name.toLowerCase() && String(s.id) !== String(editId);
+  });
   if(dup){$('fg-sdup').style.display='';return;}$('fg-sdup').style.display='none';
   var payload = {
     name:name,
     phone:$('s-contact').value.trim(),
     address:$('s-address').value.trim(),
-    supplierType:($('s-type').value||'').toUpperCase().split(' ')[0]
+    supplierType:uiTypeToSupplierTypeEnum($('s-type').value)
   };
-  if(supEditTarget){
-    var sup=suppliers.find(function(s){return s.id===supEditTarget;});
+  if(editId){
+    var sup=suppliers.find(function(s){return String(s.id)===String(editId);});
     try{
-      var updateRes = await api('/suppliers/'+encodeURIComponent(supEditTarget),{
+      var updateRes = await api('/suppliers/'+encodeURIComponent(editId),{
         method:'PUT',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify(payload)
       });
-      if(!updateRes.ok){toast('Failed to update supplier in backend.','t-bad');return;}
+      if(!updateRes.ok){
+        var errText = updateRes.status === 409 ? 'Conflict: name may already exist.' : 'Failed to update supplier in backend.';
+        toast(errText,'t-bad');
+        return;
+      }
       var updatedSupplier = await updateRes.json();
       sup = mapSupplierFromApi(updatedSupplier);
-      suppliers = suppliers.map(function(s0){return s0.id===supEditTarget?sup:s0;});
+      suppliers = suppliers.map(function(s0){return String(s0.id)===String(editId)?sup:s0;});
     }catch(_err){
       toast('Backend not reachable. Could not update supplier.','t-bad');
       return;
@@ -661,7 +688,10 @@ $('do-sup').addEventListener('click',async function(){
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify(payload)
       });
-      if(!createRes.ok){toast('Failed to add supplier in backend.','t-bad');return;}
+      if(!createRes.ok){
+        toast(createRes.status === 409 ? 'A supplier with this name already exists.' : 'Failed to add supplier in backend.','t-bad');
+        return;
+      }
       var createdSupplier = await createRes.json();
       suppliers.push(mapSupplierFromApi(createdSupplier));
     }catch(_err){
@@ -672,10 +702,59 @@ $('do-sup').addEventListener('click',async function(){
   }
   closeM('m-sup');renderSuppliers();renderDash();
   if(activeSupId)renderSupHistoryPanel(activeSupId);
-  supEditTarget=null;
+  supEditTarget=null;$('supplier-edit-id').value='';
 });
 var activeSupId = null;
 var suphFilter  = 'all';
+var supTypeFilter = 'all';
+
+function supplierTypeForFilter(s){
+  var t = (s && s.type) ? String(s.type).trim() : '';
+  if(!t)return 'Other';
+  return t;
+}
+
+function bindSupplierWorkerDelegation(){
+  var supList = $('sup-list-inner');
+  if(supList && !supList.__fcDelegation){
+    supList.__fcDelegation = true;
+    supList.addEventListener('click', function(e){
+      var editBtn = e.target.closest('button.sup-edit-btn');
+      if(editBtn){
+        e.preventDefault();
+        e.stopPropagation();
+        var sid = editBtn.getAttribute('data-sid');
+        if(sid) editSup(sid);
+        return;
+      }
+      var row = e.target.closest('.sup-row');
+      if(row){
+        var sid = row.getAttribute('data-sid');
+        if(sid) viewSupHistory(sid);
+      }
+    });
+  }
+  var wtBody = $('workers-tbody');
+  if(wtBody && !wtBody.__fcDelegation){
+    wtBody.__fcDelegation = true;
+    wtBody.addEventListener('click', function(e){
+      var editBtn = e.target.closest('button.worker-edit-btn');
+      if(editBtn){
+        e.preventDefault();
+        var wid = editBtn.getAttribute('data-wid');
+        if(wid) editWorker(wid);
+      }
+    });
+  }
+  var supFilterSel = $('sup-type-filter');
+  if(supFilterSel && !supFilterSel.__fcBound){
+    supFilterSel.__fcBound = true;
+    supFilterSel.addEventListener('change', function(){
+      supTypeFilter = supFilterSel.value || 'all';
+      renderSuppliers();
+    });
+  }
+}
 
 function renderSuppliers(){
   var inner = $('sup-list-inner');
@@ -683,10 +762,19 @@ function renderSuppliers(){
     inner.innerHTML = '<div class="empty" style="padding:30px"><div class="ei">🏭</div><div class="et">No suppliers yet.</div></div>';
     return;
   }
-  inner.innerHTML = suppliers.map(function(s){
+  var list = suppliers.filter(function(s){
+    if(supTypeFilter === 'all') return true;
+    return supplierTypeForFilter(s) === supTypeFilter;
+  });
+  if(!list.length){
+    inner.innerHTML = '<div class="empty" style="padding:30px"><div class="ei">🔎</div><div class="et">No suppliers match this type.</div></div>';
+    return;
+  }
+  inner.innerHTML = list.map(function(s){
     var txnCount = getSupTxns(s.id).length;
     var isActive = activeSupId === s.id;
-    return '<div class="sup-row'+(isActive?' sup-row-active':'')+'" data-sid="'+s.id+'" onclick="viewSupHistory(\''+s.id+'\')" style="display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--sand);cursor:pointer;transition:.12s;'+(isActive?'background:var(--al);border-left:3px solid var(--accent);':'')+'">'
+    var sidAttr = esc(String(s.id));
+    return '<div class="sup-row'+(isActive?' sup-row-active':'')+'" data-sid="'+sidAttr+'" style="display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--sand);cursor:pointer;transition:.12s;'+(isActive?'background:var(--al);border-left:3px solid var(--accent);':'')+'">'
       +'<div style="width:36px;height:36px;border-radius:9px;background:'+(isActive?'var(--accent)':'var(--sand2)')+';color:'+(isActive?'#fff':'var(--mid)')+';display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700;flex-shrink:0">'+esc(s.name.charAt(0).toUpperCase())+'</div>'
       +'<div style="flex:1;min-width:0">'
         +'<div style="font-weight:600;font-size:0.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(s.name)+'</div>'
@@ -695,7 +783,7 @@ function renderSuppliers(){
       +'<div style="text-align:right;flex-shrink:0">'
         +'<div style="font-size:0.7rem;color:var(--muted)">'+txnCount+' txn'+(txnCount!==1?'s':'')+'</div>'
         +'<div style="display:flex;gap:5px;margin-top:4px">'
-          +'<button class="btn btn-outline btn-sm" onclick="event.stopPropagation();editSup(\''+s.id+'\')" style="padding:3px 8px;font-size:0.72rem">✏️</button>'
+          +'<button type="button" class="btn btn-outline btn-sm sup-edit-btn" data-sid="'+sidAttr+'" style="padding:3px 8px;font-size:0.72rem" aria-label="Edit supplier">✏️</button>'
         +'</div>'
       +'</div>'
     +'</div>';
@@ -722,15 +810,17 @@ function getSupTxns(sid){
 }
 
 function editSup(sid){
-  var s=suppliers.find(function(x){return x.id===sid;});if(!s)return;
-  supEditTarget=sid;$('sup-modal-title').textContent='Edit Supplier';
+  var s=suppliers.find(function(x){return String(x.id)===String(sid);});if(!s)return;
+  supEditTarget=sid;
+  $('supplier-edit-id').value=String(s.id);
+  $('sup-modal-title').textContent='Edit Supplier';
   $('s-name').value=s.name;$('s-type').value=s.type||'';$('s-contact').value=s.contact||'';$('s-address').value=s.address||'';
   inv('fg-sn',false);$('fg-sdup').style.display='none';openM('m-sup');
 }
 
 // US-008: Inline Supplier History
 function viewSupHistory(sid){
-  var s=suppliers.find(function(x){return x.id===sid;});if(!s)return;
+  var s=suppliers.find(function(x){return String(x.id)===String(sid);});if(!s)return;
   activeSupId=sid; suphFilter='all';
   renderSuppliers(); // re-render to highlight active row
   var panel=$('sup-history-panel');
@@ -1249,9 +1339,12 @@ $('do-worker').addEventListener('click',async function(){
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify(payload)
       });
-      if(!updateRes.ok){toast('Failed to update worker in backend.','t-bad');return;}
+      if(!updateRes.ok){
+        toast(updateRes.status === 400 ? 'Invalid data — check salary and join date.' : 'Failed to update worker in backend.','t-bad');
+        return;
+      }
       var updatedWorker = await updateRes.json();
-      workers = workers.map(function(w0){return w0.id===wid?mapWorkerFromApi(updatedWorker):w0;});
+      workers = workers.map(function(w0){return String(w0.id)===String(wid)?mapWorkerFromApi(updatedWorker):w0;});
     }catch(_err){
       toast('Backend not reachable. Could not update worker.','t-bad');
       return;
@@ -1276,7 +1369,7 @@ $('do-worker').addEventListener('click',async function(){
   closeM('m-worker');renderPayroll();
 });
 function editWorker(wid){
-  var w=workers.find(function(x){return x.id===wid;});if(!w)return;
+  var w=workers.find(function(x){return String(x.id)===String(wid);});if(!w)return;
   workerEditTarget=wid;$('worker-modal-title').textContent='Edit Worker';$('worker-edit-id').value=wid;
   $('wk-name').value=w.name;$('wk-role').value=w.role;$('wk-contact').value=w.contact||'';$('wk-join').value=w.join||'';$('wk-salary').value=w.salary;$('wk-status').value=w.status||'Active';
   ['fg-wk-n','fg-wk-r','fg-wk-s'].forEach(function(id){inv(id,false);});openM('m-worker');
@@ -1326,10 +1419,11 @@ function renderPayroll(){
   var allPaid=payrollRuns.reduce(function(s,r){return s+r.total;},0);
   $('pay-workers').textContent=active.length;$('pay-monthly').textContent=rupees(monthlytotal);$('pay-total').textContent=rupees(allPaid);$('pay-periods').textContent=payrollRuns.length;
   $('workers-tbody').innerHTML=workers.length?workers.map(function(w){
+    var widAttr = esc(String(w.id));
     return '<tr><td><strong>'+esc(w.name)+'</strong></td><td style="color:var(--muted)">'+esc(w.role)+'</td><td style="color:var(--muted)">'+esc(w.contact||'—')+'</td>'
       +'<td style="font-family:\'DM Mono\',monospace">'+rupees(w.salary/30)+'</td><td style="font-family:\'DM Mono\',monospace">'+rupees(w.salary)+'</td>'
       +'<td><span class="badge '+(w.status==='Active'?'b-active':'b-closed')+'">'+esc(w.status)+'</span></td>'
-      +'<td><div class="tbl-actions"><button class="btn btn-outline btn-sm" onclick="editWorker(\''+w.id+'\')">✏️ Edit</button></div></td></tr>';
+      +'<td><div class="tbl-actions"><button type="button" class="btn btn-outline btn-sm worker-edit-btn" data-wid="'+widAttr+'">✏️ Edit</button></div></td></tr>';
   }).join(''):'<tr><td colspan="7"><div class="empty" style="padding:20px"><div class="et">No workers added yet.</div></div></td></tr>';
   $('payroll-tbody').innerHTML=payrollRuns.length?payrollRuns.slice().sort(function(a,b){return (b.end||'').localeCompare(a.end||'');}).map(function(r){
     var period=(r.start&&r.end)?(fmt(r.start)+' → '+fmt(r.end)+' ('+r.days+' days)'):(monthName(r.month)+' '+r.year);
@@ -1547,6 +1641,7 @@ function buildFeedReport(){
 // ════════════════════════════════════════════════════
 //  INIT
 // ════════════════════════════════════════════════════
+bindSupplierWorkerDelegation();
 loadInitialData().then(function(){
   renderDash();
   renderSuppliers();
