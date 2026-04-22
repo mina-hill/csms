@@ -230,6 +230,8 @@ tbody tr:hover td{background:#FDFAF4;}
 .pnl-loss{color:var(--red);font-weight:700;font-size:1.05em;}
 
 /* Tab filters */
+.rpt-toolbar{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px;}
+.rpt-toolbar .tab-pills{margin-bottom:0;flex:1;min-width:0;}
 .tab-pills{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;}
 .tab-pill{padding:5px 14px;border-radius:20px;font-size:0.78rem;font-weight:500;cursor:pointer;border:1.5px solid var(--border);background:var(--white);color:var(--muted);transition:.12s;}
 .tab-pill:hover{background:var(--sand);}

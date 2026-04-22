@@ -22,6 +22,8 @@ var bradaTxns    = [];   // {id,type,flock,sup,qty,cost,date,time,balance}
 var expenses     = [];   // {id,cat,desc,units,rate,amount,date,flockId,time}
 var workers      = [];   // {id,name,role,contact,join,salary,status}
 var payrollRuns  = [];   // {id,month,year,workers:[{name,salary}],total,processedOn,status}
+var weeklySummaries = []; // rows from GET /weekly-summary (weekly_summary / fcr_value)
+var currentReportTab = 'mortality';
 var payrollSelectedWorkerId = '';
 var auditLog     = [];
 var flockLoadWarned = false, feedLoadWarned = false, medicineLoadWarned = false;
@@ -259,13 +261,12 @@ async function loadWeightsFromApi(){
       var age=chickAgeDays(fid,date);
       var ft=flockByUiId(fid);
       var totalChicks=ft?ft.origQty:0;
-      var totalMort=totalMortalityForFlock(fid);
+      var totalMort=totalMortalityForFlockThrough(fid,date);
       var remaining=Math.max(0,totalChicks-totalMort);
-      var startDateObj=new Date(date+'T00:00:00');startDateObj.setDate(startDateObj.getDate()-6);
-      var start=startDateObj.getFullYear()+'-'+pad(startDateObj.getMonth()+1)+'-'+pad(startDateObj.getDate());
-      var feedKg=feedUsedKgForFlockBetween(fid,start,date);
+      var cumSacks=cumulativeFeedSacksThrough(fid,date);
+      var feedKg=cumSacks*50;
       var liveKg=remaining*(avgG/1000);
-      var fcr=(feedKg>0&&liveKg>0)?(liveKg/feedKg):null;
+      var fcr=fcrDbStyleFromMetrics(cumSacks,(avgG/1000),remaining);
       return {
         id:w.weightId||w.id,
         flockId:fid,
@@ -296,7 +297,8 @@ async function loadFeedTxnsFromApi(){
     pur.forEach(function(p){
       var name=feedTypeNameById(p.feedTypeId);
       var qty=p.sackCount!=null?p.sackCount:p.sacksQty;
-      next.push({id:'FP-'+p.purchaseId,type:'Purchase',feedType:name||String(p.feedTypeId),supId:p.supplierId,supName:'',qty:qty,cost:Number(p.totalCost||0),costPerSack:Number(p.costPerSack||0),date:(p.purchaseDate||'').toString().slice(0,10),time:now()});
+      var sup=suppliers.find(function(s){ return String(s.id)===String(p.supplierId); });
+      next.push({id:'FP-'+p.purchaseId,type:'Purchase',feedType:name||String(p.feedTypeId),supId:p.supplierId,supName:sup?sup.name:'',qty:qty,cost:Number(p.totalCost||0),costPerSack:Number(p.costPerSack||0),date:(p.purchaseDate||'').toString().slice(0,10),time:now()});
     });
     use.forEach(function(u){
       var name=feedTypeNameById(u.feedTypeId);
@@ -321,7 +323,8 @@ async function loadMedTxnsFromApi(){
     var next=[];
     pur.forEach(function(p){
       var name=medicineNameById(p.medicineId);
-      next.push({id:'MP-'+p.purchaseId,type:'Purchase',medicine:name||String(p.medicineId),supId:p.supplierId,supName:'',qty:p.quantity,cost:Number(p.totalCost||0),unit:p.unit||'',date:(p.purchaseDate||'').toString().slice(0,10),time:now()});
+      var sup=suppliers.find(function(s){ return String(s.id)===String(p.supplierId); });
+      next.push({id:'MP-'+p.purchaseId,type:'Purchase',medicine:name||String(p.medicineId),supId:p.supplierId,supName:sup?sup.name:'',qty:p.quantity,cost:Number(p.totalCost||0),unit:p.unit||'',date:(p.purchaseDate||'').toString().slice(0,10),time:now()});
     });
     use.forEach(function(u){
       var name=medicineNameById(u.medicineId);
@@ -612,6 +615,28 @@ async function loadPayrollRunsFromApi(){
   }
 }
 
+async function loadWeeklySummariesFromApi(){
+  try{
+    var res=await api('/weekly-summary');
+    if(!res.ok)return;
+    var rows=toArrayPayload(await res.json());
+    weeklySummaries=rows.map(function(s){
+      return {
+        summaryId:s.summaryId,
+        flockDbId:String(s.flockId||''),
+        weekNumber:Number(s.weekNumber||0),
+        weekEndDate:(s.weekEndDate||'').toString().slice(0,10),
+        remainingChicks:Number(s.remainingChicks!=null?s.remainingChicks:0),
+        cumulativeFeedSacks:Number(s.cumulativeFeedSacks!=null?s.cumulativeFeedSacks:0),
+        avgWeightKg:s.avgWeightKg!=null?Number(s.avgWeightKg):null,
+        fcrValue:s.fcrValue!=null?Number(s.fcrValue):null
+      };
+    });
+  }catch(_e){
+    weeklySummaries=[];
+  }
+}
+
 async function loadInitialData(){
   try{
     var supplierRes = await api('/suppliers');
@@ -648,6 +673,7 @@ async function loadInitialData(){
   await loadOtherSalesFromApi();
   await loadExpensesFromApi();
   await loadPayrollRunsFromApi();
+  await loadWeeklySummariesFromApi();
 }
 
 function daysBetween(start,end){
@@ -690,9 +716,36 @@ function weekNumberForFlockDate(flockId,recordDate){
 function feedUsedKgForFlockBetween(flockId,startDate,endDate){
   return feedSacksForFlockBetween(flockId,startDate,endDate)*50;
 }
+function totalMortalityForFlockThrough(flockId,endDate){
+  if(!flockId||!endDate)return 0;
+  var end=String(endDate).slice(0,10);
+  return mortalities.filter(function(m){
+    return m.flockId===flockId && m.date && String(m.date).slice(0,10)<=end;
+  }).reduce(function(s,m){return s+(m.count||0);},0);
+}
+function fcrDbStyleFromMetrics(cumSacks,avgWeightKg,remainingChicks){
+  var cs=Number(cumSacks||0),aw=Number(avgWeightKg||0),rm=Number(remainingChicks||0);
+  if(cs<=0||aw<=0||rm<=0)return null;
+  var feedKg=cs*50;
+  var liveKg=rm*aw;
+  if(feedKg<=0||liveKg<=0)return null;
+  return feedKg/liveKg;
+}
+function totalSackSaleRevenue(){
+  return feedTxns.filter(function(t){return t.type==='Sale';}).reduce(function(s,t){return s+(t.cost||0);},0);
+}
+function isPayrollMirrorExpense(e){
+  return e && e.cat==='Labour' && /^Payroll —/i.test(String(e.desc||''));
+}
+function labourExpenseForPnL(){
+  return expenses.filter(function(e){return e.cat==='Labour' && !isPayrollMirrorExpense(e);}).reduce(function(s,e){return s+e.amount;},0);
+}
+function nonLabourExpenseForPnL(){
+  return expenses.filter(function(e){return e.cat!=='Labour';}).reduce(function(s,e){return s+e.amount;},0);
+}
 function monthName(m){return ['','January','February','March','April','May','June','July','August','September','October','November','December'][m];}
 function totalRevenue(){
-  return flockSales.reduce(function(s,x){return s+x.total;},0)+otherSales.reduce(function(s,x){return s+x.amount;},0);
+  return flockSales.reduce(function(s,x){return s+x.total;},0)+otherSales.reduce(function(s,x){return s+x.amount;},0)+totalSackSaleRevenue();
 }
 
 // ════════════════════════════════════════════════════
@@ -705,11 +758,15 @@ document.querySelectorAll('.nav-item').forEach(function(btn){
     btn.classList.add('on');
     var v=btn.getAttribute('data-view');
     $('view-'+v).classList.add('on');
-    var render={dashboard:renderDash,flocks:function(){loadFlocksFromApi().then(renderFlocks);},daily:function(){Promise.all([loadMortalityFromApi(),loadFeedTxnsFromApi(),loadWeightsFromApi()]).then(renderDaily);},sales:function(){Promise.all([loadFlockSalesFromApi(),loadOtherSalesFromApi(),loadFeedTxnsFromApi()]).then(renderSalesView);},
+    var render={dashboard:renderDash,flocks:function(){loadFlocksFromApi().then(renderFlocks);},daily:function(){Promise.all([loadMortalityFromApi(),loadFeedTxnsFromApi(),loadMedTxnsFromApi(),loadWeightsFromApi()]).then(renderDaily);},sales:function(){Promise.all([loadFlockSalesFromApi(),loadOtherSalesFromApi(),loadFeedTxnsFromApi()]).then(renderSalesView);},
       feed:function(){Promise.all([loadFeedTypesFromApi(),loadFeedTxnsFromApi()]).then(renderFeed);},medicine:function(){Promise.all([loadMedicinesFromApi(),loadMedTxnsFromApi()]).then(renderMedicine);},brada:function(){loadBradaFromApi().then(renderBrada);},expenses:function(){loadExpensesFromApi().then(renderExpenses);},
       payroll:renderPayroll,suppliers:renderSuppliers,audit:function(){loadSystemAuditFromApi().then(renderAudit);}};
-    if(render[v])render[v]();
-    if(v==='reports')renderReport(document.querySelector('.tab-pill.on[data-rtab]')&&document.querySelector('.tab-pill.on[data-rtab]').getAttribute('data-rtab')||'mortality');
+    if(v==='reports'){
+      currentReportTab=(document.querySelector('.tab-pill.on[data-rtab]')&&document.querySelector('.tab-pill.on[data-rtab]').getAttribute('data-rtab'))||currentReportTab||'mortality';
+      Promise.all([loadWeeklySummariesFromApi(),loadFeedTxnsFromApi(),loadMortalityFromApi(),loadWeightsFromApi(),loadFlockSalesFromApi(),loadOtherSalesFromApi(),loadExpensesFromApi(),loadPayrollRunsFromApi(),loadMedTxnsFromApi(),loadBradaFromApi()]).then(function(){
+        renderReport(currentReportTab);
+      });
+    }else if(render[v])render[v]();
   });
 });
 document.addEventListener('click',function(e){
@@ -1129,11 +1186,51 @@ $('do-weight').addEventListener('click',async function(){
 });
 
 function renderDaily(){
-  var dtab=document.querySelector('.tab-pill.on[data-dtab]');
+  var dtab=document.querySelector('#daily-tabs .tab-pill.on[data-dtab]');
   var active=dtab?dtab.getAttribute('data-dtab'):'mortality';
-  renderMortTable();renderWeightTable();
+  renderMortTable();renderDailyRecordTable();renderWeightTable();
   $('daily-mortality-pane').style.display=active==='mortality'?'':'none';
+  $('daily-daily-pane').style.display=active==='daily-record'?'':'none';
   $('daily-weight-pane').style.display=active==='weekly'?'':'none';
+}
+function renderDailyRecordTable(){
+  var tb=$('daily-record-tbody');
+  if(!tb)return;
+  var entries=[];
+  feedTxns.filter(function(t){return t.type==='Usage';}).forEach(function(t){
+    var q=Number(t.qty||0);
+    entries.push({
+      date:t.date||'',
+      flockId:t.flockId||'—',
+      type:'Feed',
+      item:t.feedType||'—',
+      qtyLabel:q+' sack'+(q===1?'':'s'),
+      meta:esc(t.shift||'—')
+    });
+  });
+  medTxns.filter(function(t){return t.type==='Usage';}).forEach(function(t){
+    var parts=[];
+    if(t.usageTime)parts.push(t.usageTime);
+    if(t.notes)parts.push(t.notes);
+    entries.push({
+      date:t.date||'',
+      flockId:t.flockId||'—',
+      type:'Medicine',
+      item:t.medicine||'—',
+      qtyLabel:String(t.qty!=null?t.qty:'')+(t.unit?(' '+t.unit):''),
+      meta:esc(parts.length?parts.join(' · '):'—')
+    });
+  });
+  entries.sort(function(a,b){
+    var c=String(b.date).localeCompare(String(a.date));
+    if(c!==0)return c;
+    return String(a.type).localeCompare(String(b.type));
+  });
+  tb.innerHTML=entries.length?entries.map(function(e){
+    return '<tr><td>'+fmt(e.date)+'</td><td><span class="fc-id" style="font-size:0.75rem">'+esc(e.flockId)+'</span></td>'
+      +'<td><span class="badge '+(e.type==='Feed'?'b-active':'b-processed')+'">'+esc(e.type)+'</span></td>'
+      +'<td>'+esc(e.item)+'</td><td style="font-weight:600">'+esc(e.qtyLabel)+'</td><td style="color:var(--muted);font-size:0.85rem">'+e.meta+'</td></tr>';
+  }).join(''):'<tr><td colspan="6"><div class="empty" style="padding:20px"><div class="et">No feed or medicine usage yet. Use Record Feed or Record Medicine above.</div></div></td></tr>';
 }
 function renderMortTable(){
   // allow multiple Hospital/Shed entries per day by grouping display by (date, flock)
@@ -1163,9 +1260,9 @@ function renderWeightTable(){
       +'<td>'+(r.ageDays||'—')+'</td><td>'+(r.totalChicks||0)+'</td><td>'+(r.totalMortality||0)+'</td><td>'+(r.remainingChicks!==null?r.remainingChicks:'—')+'</td><td>'+(r.feedUsedKg||0)+'</td><td style="font-weight:600">'+r.avgWeightG+'g</td><td>'+fcr+'</td></tr>';
   }).join(''):'<tr><td colspan="9"><div class="empty" style="padding:20px"><div class="et">No weekly records yet.</div></div></td></tr>';
 }
-document.querySelectorAll('[data-dtab]').forEach(function(btn){
+document.querySelectorAll('#daily-tabs [data-dtab]').forEach(function(btn){
   btn.addEventListener('click',function(){
-    document.querySelectorAll('[data-dtab]').forEach(function(b){b.classList.remove('on');});
+    document.querySelectorAll('#daily-tabs [data-dtab]').forEach(function(b){b.classList.remove('on');});
     btn.classList.add('on');renderDaily();
   });
 });
@@ -1889,7 +1986,7 @@ $('do-dfeed').addEventListener('click',async function(){
   }
   dailyFeedRecords.push({id:'DF-'+String(ftSeq++).padStart(4,'0'),flockId:flockId,date:date,feedType:type,daySacks:day,nightSacks:night,totalSacks:total,time:now(),editor:EDITOR});
   addLog(flockId,'Daily Feed',type+': Day '+day+', Night '+night+' sacks (Total '+total+')');
-  closeM('m-dfeed');toast('Daily feed saved.','t-ok');renderFeed();renderDash();
+  closeM('m-dfeed');toast('Daily feed saved.','t-ok');renderFeed();renderDaily();renderDash();
 });
 
 function dmUnitOptions(){
@@ -2066,7 +2163,7 @@ $('do-dmed').addEventListener('click',async function(){
     if(s&&typeof s.qty==='number') s.lastUpdated=date;
   });
   addLog(flockId,'Daily Medicine',items.length+' item(s) on '+fmt(date));
-  closeM('m-dmed');toast('Daily medicine saved.','t-ok');refreshMedSelects();renderMedicine();renderDash();
+  closeM('m-dmed');toast('Daily medicine saved.','t-ok');refreshMedSelects();renderMedicine();renderDaily();renderDash();
 });
 
 // ════════════════════════════════════════════════════
@@ -2539,22 +2636,46 @@ function renderPayroll(){
 document.querySelectorAll('[data-rtab]').forEach(function(btn){
   btn.addEventListener('click',function(){
     document.querySelectorAll('[data-rtab]').forEach(function(b){b.classList.remove('on');});
-    btn.classList.add('on');renderReport(btn.getAttribute('data-rtab'));
+    btn.classList.add('on');
+    currentReportTab=btn.getAttribute('data-rtab');
+    renderReport(currentReportTab);
   });
 });
-function renderReport(tab){
-  var c=$('rpt-content');
-  if(tab==='mortality')c.innerHTML=buildMortalityReport();
-  else if(tab==='fcr')c.innerHTML=buildFCRReport();
-  else if(tab==='pnl')c.innerHTML=buildPnLReport();
-  else if(tab==='perf')c.innerHTML=buildPerfReport();
-  else if(tab==='sales-sum')c.innerHTML=buildSalesSummary();
-  else if(tab==='exp-sum')c.innerHTML=buildExpSummary();
-  else if(tab==='resource')c.innerHTML=buildResourceReport();
-  else if(tab==='med-supplier')c.innerHTML=buildMedSupplierReport();
-  else if(tab==='brada-rpt')c.innerHTML=buildBradaReport();
-  else if(tab==='feed-rpt')c.innerHTML=buildFeedReport();
+function fcrFeedPerLiveColor(fcr){
+  if(fcr===null||fcr===undefined||!isFinite(fcr))return 'var(--muted)';
+  if(fcr<=1.95)return 'var(--green)';
+  if(fcr<=2.35)return 'var(--amber)';
+  return 'var(--red)';
 }
+function renderReport(tab){
+  currentReportTab=tab||currentReportTab||'mortality';
+  var t=currentReportTab;
+  var c=$('rpt-content');
+  if(t==='mortality')c.innerHTML=buildMortalityReport();
+  else if(t==='fcr')c.innerHTML=buildFCRReport();
+  else if(t==='pnl')c.innerHTML=buildPnLReport();
+  else if(t==='perf')c.innerHTML=buildPerfReport();
+  else if(t==='sales-sum')c.innerHTML=buildSalesSummary();
+  else if(t==='exp-sum')c.innerHTML=buildExpSummary();
+  else if(t==='resource')c.innerHTML=buildResourceReport();
+  else if(t==='med-supplier')c.innerHTML=buildMedSupplierReport();
+  else if(t==='brada-rpt')c.innerHTML=buildBradaReport();
+  else if(t==='feed-rpt')c.innerHTML=buildFeedReport();
+}
+function downloadReportPdf(){
+  var tab=currentReportTab||'mortality';
+  var names={mortality:'flockcontrol-mortality',fcr:'flockcontrol-fcr',pnl:'flockcontrol-pnl',perf:'flockcontrol-flock-performance','sales-sum':'flockcontrol-sales-summary','exp-sum':'flockcontrol-expense-summary',resource:'flockcontrol-resource','med-supplier':'flockcontrol-medicine-supplier','brada-rpt':'flockcontrol-brada','feed-rpt':'flockcontrol-feed'};
+  var el=$('rpt-content');
+  if(!el||!String(el.textContent||'').trim()){toast('Nothing to export for this report.','t-bad');return;}
+  if(el.querySelector('.empty')&&!el.querySelector('.rpt-section')&&!el.querySelector('.kpi-grid')){toast('Nothing to export for this report.','t-bad');return;}
+  if(!window.__html2pdf){toast('PDF library is still loading. Try again in a moment.','t-info');return;}
+  var fn=(names[tab]||'flockcontrol-report')+'-'+new Date().toISOString().slice(0,10)+'.pdf';
+  var opt={margin:[10,10,10,10],filename:fn,image:{type:'jpeg',quality:0.92},html2canvas:{scale:2,useCORS:true,logging:false},jsPDF:{unit:'mm',format:'a4',orientation:'portrait'},pagebreak:{mode:['avoid-all','css','legacy']}};
+  window.__html2pdf().set(opt).from(el).save().catch(function(){toast('Could not generate PDF.','t-bad');});
+}
+document.addEventListener('click',function(e){
+  if(e.target&&e.target.closest&&e.target.closest('#btn-rpt-pdf'))downloadReportPdf();
+});
 function buildMortalityReport(){
   if(!mortalities.length)return '<div class="empty" style="padding:40px"><div class="ei">📉</div><div class="et">No mortality records yet.</div></div>';
   var byFlock={};flocks.forEach(function(f){byFlock[f.id]={breed:f.breed,origQty:f.origQty,deaths:0,entries:[]};});
@@ -2574,31 +2695,61 @@ function buildMortalityReport(){
   html+='</tbody></table></div>';return html;
 }
 function buildFCRReport(){
-  if(!feedTxns.length||!weeklyRecords.length)return '<div class="empty" style="padding:40px"><div class="ei">🔄</div><div class="et">FCR requires both weekly records and feed usage records.</div></div>';
   var html='<div class="rpt-section"><div class="rpt-header">Feed Conversion Ratio (FCR) Report</div>';
-  html+='<div class="ab ab-info"><span class="ab-ico">ℹ️</span><div>FCR (per your system rule) = <strong>Total Live Weight (kg) ÷ Total Feed Used (kg)</strong>. Weekly record uses last 7 days feed usage for the selected record date.</div></div>';
-  html+='<table><thead><tr><th>Flock</th><th>Breed</th><th>Week Date</th><th>Remaining</th><th>Feed Used (kg)</th><th>Total Live Weight (kg)</th><th>FCR</th></tr></thead><tbody>';
-  flocks.forEach(function(f){
-    var recs=weeklyRecords.filter(function(r){return r.flockId===f.id;}).sort(function(a,b){return b.date.localeCompare(a.date);});
-    if(!recs.length)return;
-    var r=recs[0];
-    var feedKg=r.feedUsedKg||0;
-    var liveKg=(r.remainingChicks||0)*((r.avgWeightG||0)/1000);
-    var fcr=r.fcr!==null&&r.fcr!==undefined?Number(r.fcr):null;
-    var fcrColor=fcr!==null?(fcr>=0.6?'var(--green)':fcr>=0.4?'var(--amber)':'var(--red)'):'var(--muted)';
-    html+='<tr><td><span class="fc-id" style="font-size:0.75rem">'+esc(f.id)+'</span></td><td>'+esc(f.breed)+'</td><td>'+fmt(r.date)+'</td><td>'+(r.remainingChicks||0)+'</td><td>'+feedKg+'</td><td>'+liveKg.toFixed(1)+'</td>'
-      +'<td style="font-weight:700;color:'+fcrColor+'">'+(fcr!==null?fcr.toFixed(3):'—')+'</td></tr>';
+  html+='<div class="ab ab-info"><span class="ab-ico">ℹ️</span><div>FCR matches <strong>weekly_summary.fcr_value</strong> in the database: <strong>feed (kg) ÷ live weight (kg)</strong>, with feed (kg) = cumulative feed sacks through the week end × 50. Lower values are generally better. Rows labeled <strong>Weekly summary</strong> use the stored snapshot; <strong>Estimated</strong> rows use the same formula from weight records and feed usage when no snapshot exists.</div></div>';
+  var rows=[];
+  if(weeklySummaries.length){
+    weeklySummaries.slice().sort(function(a,b){
+      var c=String(b.weekEndDate).localeCompare(String(a.weekEndDate));
+      if(c!==0)return c;
+      return (b.weekNumber||0)-(a.weekNumber||0);
+    }).forEach(function(s){
+      var f=flocks.find(function(x){return String(x.flockDbId)===String(s.flockDbId);});
+      if(!f)return;
+      var avgKg=s.avgWeightKg!=null?s.avgWeightKg:0;
+      var feedKg=(s.cumulativeFeedSacks||0)*50;
+      var liveKg=(s.remainingChicks||0)*avgKg;
+      var fcr=s.fcrValue!=null&&!isNaN(s.fcrValue)?Number(s.fcrValue):fcrDbStyleFromMetrics(s.cumulativeFeedSacks,avgKg,s.remainingChicks);
+      rows.push({src:'Weekly summary',flockId:f.id,breed:f.breed,weekEnd:s.weekEndDate,weekNum:s.weekNumber,remaining:s.remainingChicks,cumSacks:s.cumulativeFeedSacks,feedKg:feedKg,liveKg:liveKg,fcr:fcr});
+    });
+  }else if(weeklyRecords.length){
+    weeklyRecords.slice().sort(function(a,b){return String(b.date).localeCompare(String(a.date));}).forEach(function(r){
+      var f=flockByUiId(r.flockId);
+      if(!f)return;
+      var endD=r.date;
+      var cum=cumulativeFeedSacksThrough(r.flockId,endD);
+      var mort=totalMortalityForFlockThrough(r.flockId,endD);
+      var rem=Math.max(0,(f.origQty||0)-mort);
+      var avgKg=(r.avgWeightG||0)/1000;
+      var feedKg=cum*50;
+      var liveKg=rem*avgKg;
+      var fcr=fcrDbStyleFromMetrics(cum,avgKg,rem);
+      rows.push({src:'Estimated',flockId:r.flockId,breed:f.breed,weekEnd:endD,weekNum:weekNumberForFlockDate(r.flockId,endD),remaining:rem,cumSacks:cum,feedKg:feedKg,liveKg:liveKg,fcr:fcr});
+    });
+  }
+  if(!rows.length){
+    return html+'<div class="empty" style="padding:40px"><div class="ei">🔄</div><div class="et">No weekly summary snapshots yet. Add weekly summaries from Daily Records, or record weekly weights and feed usage to see estimated FCR.</div></div></div>';
+  }
+  html+='<table><thead><tr><th>Source</th><th>Flock</th><th>Breed</th><th>Week end</th><th>Wk#</th><th>Remaining</th><th>Cum. sacks</th><th>Feed (kg)</th><th>Live wt (kg)</th><th>FCR</th></tr></thead><tbody>';
+  rows.forEach(function(row){
+    var fcrColor=fcrFeedPerLiveColor(row.fcr);
+    html+='<tr><td>'+esc(row.src)+'</td><td><span class="fc-id" style="font-size:0.75rem">'+esc(row.flockId)+'</span></td><td>'+esc(row.breed)+'</td><td>'+fmt(row.weekEnd)+'</td><td>'+(row.weekNum||'—')+'</td><td>'+(row.remaining||0)+'</td><td>'+(row.cumSacks||0)+'</td><td>'+(row.feedKg?row.feedKg.toFixed(1):'0')+'</td><td>'+(row.liveKg?row.liveKg.toFixed(1):'0')+'</td>'
+      +'<td style="font-weight:700;color:'+fcrColor+'">'+(row.fcr!==null&&row.fcr!==undefined&&!isNaN(row.fcr)?Number(row.fcr).toFixed(3):'—')+'</td></tr>';
   });
   html+='</tbody></table></div>';return html;
 }
 function buildPnLReport(){
-  var totalRev=flockSales.reduce(function(s,x){return s+x.total;},0)+otherSales.reduce(function(s,x){return s+x.amount;},0);
+  var flockRev=flockSales.reduce(function(s,x){return s+x.total;},0);
+  var otherRev=otherSales.reduce(function(s,x){return s+x.amount;},0);
+  var sackRev=totalSackSaleRevenue();
+  var totalRev=flockRev+otherRev+sackRev;
   var feedCost=feedTxns.filter(function(t){return t.type==='Purchase';}).reduce(function(s,t){return s+(t.cost||0);},0);
   var medCost=medTxns.filter(function(t){return t.type==='Purchase';}).reduce(function(s,t){return s+(t.cost||0);},0);
   var bradaCost=bradaTxns.filter(function(t){return t.type==='Purchase';}).reduce(function(s,t){return s+(t.cost||0);},0);
   var payrollCost=payrollRuns.reduce(function(s,r){return s+r.total;},0);
-  var expCost=expenses.filter(function(e){return e.cat!=='Labour';}).reduce(function(s,e){return s+e.amount;},0);
-  var totalCost=feedCost+medCost+bradaCost+payrollCost+expCost;
+  var labourExp=labourExpenseForPnL();
+  var otherExp=nonLabourExpenseForPnL();
+  var totalCost=feedCost+medCost+bradaCost+payrollCost+otherExp+labourExp;
   var net=totalRev-totalCost;
   var html='<div class="kpi-grid">'
     +'<div class="kpi"><div class="kpi-lbl">Total Revenue</div><div class="kpi-val" style="color:var(--green)">'+rupees(totalRev)+'</div></div>'
@@ -2607,15 +2758,17 @@ function buildPnLReport(){
     +'</div>';
   html+='<div class="rpt-section"><div class="rpt-header">Profit & Loss Statement</div><table><thead><tr><th>Line Item</th><th>Amount</th></tr></thead><tbody>';
   html+='<tr><td style="color:var(--green);font-weight:600">Revenue</td><td></td></tr>';
-  html+='<tr><td style="padding-left:30px">Flock Sales</td><td class="pnl-income">'+rupees(flockSales.reduce(function(s,x){return s+x.total;},0))+'</td></tr>';
-  html+='<tr><td style="padding-left:30px">Other Revenue</td><td class="pnl-income">'+rupees(otherSales.reduce(function(s,x){return s+x.amount;},0))+'</td></tr>';
+  html+='<tr><td style="padding-left:30px">Flock Sales</td><td class="pnl-income">'+rupees(flockRev)+'</td></tr>';
+  html+='<tr><td style="padding-left:30px">Sack / Feed Sales</td><td class="pnl-income">'+rupees(sackRev)+'</td></tr>';
+  html+='<tr><td style="padding-left:30px">Other Revenue</td><td class="pnl-income">'+rupees(otherRev)+'</td></tr>';
   html+='<tr class="rpt-total-row"><td><strong>Total Revenue</strong></td><td class="pnl-income">'+rupees(totalRev)+'</td></tr>';
   html+='<tr><td style="color:var(--red);font-weight:600">Costs</td><td></td></tr>';
   html+='<tr><td style="padding-left:30px">Feed</td><td class="pnl-expense">'+rupees(feedCost)+'</td></tr>';
   html+='<tr><td style="padding-left:30px">Medicine</td><td class="pnl-expense">'+rupees(medCost)+'</td></tr>';
   html+='<tr><td style="padding-left:30px">Brada</td><td class="pnl-expense">'+rupees(bradaCost)+'</td></tr>';
-  html+='<tr><td style="padding-left:30px">Payroll / Labour</td><td class="pnl-expense">'+rupees(payrollCost)+'</td></tr>';
-  html+='<tr><td style="padding-left:30px">Other Expenses</td><td class="pnl-expense">'+rupees(expCost)+'</td></tr>';
+  html+='<tr><td style="padding-left:30px">Payroll (processed)</td><td class="pnl-expense">'+rupees(payrollCost)+'</td></tr>';
+  html+='<tr><td style="padding-left:30px">Labour (expenses)</td><td class="pnl-expense">'+rupees(labourExp)+'</td></tr>';
+  html+='<tr><td style="padding-left:30px">Other Expenses</td><td class="pnl-expense">'+rupees(otherExp)+'</td></tr>';
   html+='<tr class="rpt-total-row"><td><strong>Total Costs</strong></td><td class="pnl-expense">'+rupees(totalCost)+'</td></tr>';
   html+='<tr class="rpt-total-row"><td><strong>Net '+(net>=0?'Profit':'Loss')+'</strong></td><td class="'+(net>=0?'pnl-profit':'pnl-loss')+'">'+rupees(Math.abs(net))+'</td></tr>';
   html+='</tbody></table></div>';return html;
@@ -2639,6 +2792,8 @@ function buildPerfReport(){
 function buildSalesSummary(){
   var catMap={};
   flockSales.forEach(function(s){catMap['Flock Sales']=(catMap['Flock Sales']||0)+s.total;});
+  var sackRev=totalSackSaleRevenue();
+  if(sackRev>0)catMap['Sack / Feed Sales']=sackRev;
   otherSales.forEach(function(s){catMap[s.category]=(catMap[s.category]||0)+s.amount;});
   var total=Object.values(catMap).reduce(function(s,v){return s+v;},0);
   var html='<div class="rpt-section"><div class="rpt-header">Sales Summary</div>';

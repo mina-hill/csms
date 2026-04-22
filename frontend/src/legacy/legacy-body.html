@@ -94,12 +94,19 @@
       </div>
       <div class="tab-pills" id="daily-tabs">
         <button class="tab-pill on" data-dtab="mortality">Mortality Entries</button>
+        <button class="tab-pill" data-dtab="daily-record">Daily Records</button>
         <button class="tab-pill" data-dtab="weekly">Weekly Records</button>
       </div>
       <div id="daily-mortality-pane">
         <div class="card"><table>
           <thead><tr><th>Date</th><th>Flock</th><th>Deaths</th><th>Cumulative</th><th>Remaining Birds</th><th>Recorded By</th></tr></thead>
           <tbody id="mort-tbody"><tr><td colspan="6"><div class="empty" style="padding:20px"><div class="et">No mortality records yet.</div></div></td></tr></tbody>
+        </table></div>
+      </div>
+      <div id="daily-daily-pane" style="display:none">
+        <div class="card"><table>
+          <thead><tr><th>Date</th><th>Flock</th><th>Type</th><th>Item</th><th>Quantity</th><th>Shift / Time / Notes</th></tr></thead>
+          <tbody id="daily-record-tbody"><tr><td colspan="6"><div class="empty" style="padding:20px"><div class="et">No feed or medicine usage yet. Use Record Feed or Record Medicine above.</div></div></td></tr></tbody>
         </table></div>
       </div>
       <div id="daily-weight-pane" style="display:none">
@@ -291,7 +298,8 @@
         <div class="vtitle">Reports & Analytics</div>
         <div class="vsub">Mortality · FCR · P&L · Flock Performance · Sales Summary · Expense Summary · Resource Consumption</div>
       </div>
-      <div class="tab-pills" id="rpt-tabs">
+      <div class="rpt-toolbar">
+        <div class="tab-pills" id="rpt-tabs">
         <button class="tab-pill on" data-rtab="mortality">📉 Mortality</button>
         <button class="tab-pill" data-rtab="fcr">🔄 FCR</button>
         <button class="tab-pill" data-rtab="pnl">💹 P&amp;L</button>
@@ -302,6 +310,8 @@
         <button class="tab-pill" data-rtab="med-supplier">💊 Medicine by Supplier</button>
         <button class="tab-pill" data-rtab="brada-rpt">🪨 Brada Report</button>
         <button class="tab-pill" data-rtab="feed-rpt">🌾 Feed Report</button>
+        </div>
+        <button type="button" class="btn btn-outline" id="btn-rpt-pdf" title="Download this report as PDF">📄 Download PDF</button>
       </div>
       <div id="rpt-content"></div>
     </div>

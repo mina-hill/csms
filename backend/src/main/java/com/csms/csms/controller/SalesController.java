@@ -1,11 +1,13 @@
 package com.csms.csms.controller;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
+import com.csms.csms.entity.FeedSale;
 import com.csms.csms.entity.Flock;
 import com.csms.csms.entity.FlockSale;
 import com.csms.csms.entity.FlockStatus;
 import com.csms.csms.entity.OtherSale;
 import com.csms.csms.entity.OtherSaleCategory;
+import com.csms.csms.repository.FeedSaleRepository;
 import com.csms.csms.repository.FlockRepository;
 import com.csms.csms.repository.FlockSaleRepository;
 import com.csms.csms.repository.OtherSaleRepository;
@@ -35,6 +37,9 @@ public class SalesController {
 
     @Autowired
     private OtherSaleRepository otherSaleRepository;
+
+    @Autowired
+    private FeedSaleRepository feedSaleRepository;
 
     // FIX-6: Need FlockRepository to check flock status before saving a sale.
     @Autowired
@@ -232,13 +237,16 @@ public class SalesController {
 
         List<FlockSale> flockSales;
         List<OtherSale> otherSales;
+        List<FeedSale> feedSackSales;
 
         if (startDate != null && endDate != null) {
             flockSales = flockSaleRepository.findBySaleDateBetween(startDate, endDate);
             otherSales = otherSaleRepository.findBySaleDateBetween(startDate, endDate);
+            feedSackSales = feedSaleRepository.findBySaleDateBetween(startDate, endDate);
         } else {
             flockSales = flockSaleRepository.findAll();
             otherSales = otherSaleRepository.findAll();
+            feedSackSales = feedSaleRepository.findAll();
         }
 
         BigDecimal flockRevenue = flockSales.stream()
@@ -249,10 +257,28 @@ public class SalesController {
                 .map(OtherSale::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+        BigDecimal feedSackRevenue = feedSackSales.stream()
+                .map(fs -> {
+                    BigDecimal tr = fs.getTotalRevenue();
+                    if (tr != null) {
+                        return tr;
+                    }
+                    if (fs.getSacksSold() != null && fs.getPricePerSack() != null) {
+                        return fs.getPricePerSack()
+                                .multiply(BigDecimal.valueOf(fs.getSacksSold()))
+                                .setScale(2, RoundingMode.HALF_UP);
+                    }
+                    return BigDecimal.ZERO;
+                })
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal totalRevenue = flockRevenue.add(otherRevenue).add(feedSackRevenue);
+
         return ResponseEntity.ok(new SalesSummary(
                 flockSales.size(), flockRevenue,
                 otherSales.size(), otherRevenue,
-                flockRevenue.add(otherRevenue)
+                feedSackSales.size(), feedSackRevenue,
+                totalRevenue
         ));
     }
 }
@@ -310,15 +336,20 @@ class SalesSummary {
     private BigDecimal flockRevenue;
     private int otherSalesCount;
     private BigDecimal otherRevenue;
+    private int feedSackSalesCount;
+    private BigDecimal feedSackRevenue;
     private BigDecimal totalRevenue;
 
     public SalesSummary(int flockSalesCount, BigDecimal flockRevenue,
                         int otherSalesCount, BigDecimal otherRevenue,
+                        int feedSackSalesCount, BigDecimal feedSackRevenue,
                         BigDecimal totalRevenue) {
         this.flockSalesCount = flockSalesCount;
         this.flockRevenue = flockRevenue;
         this.otherSalesCount = otherSalesCount;
         this.otherRevenue = otherRevenue;
+        this.feedSackSalesCount = feedSackSalesCount;
+        this.feedSackRevenue = feedSackRevenue;
         this.totalRevenue = totalRevenue;
     }
 
@@ -330,6 +361,10 @@ class SalesSummary {
     public void setOtherSalesCount(int otherSalesCount) { this.otherSalesCount = otherSalesCount; }
     public BigDecimal getOtherRevenue() { return otherRevenue; }
     public void setOtherRevenue(BigDecimal otherRevenue) { this.otherRevenue = otherRevenue; }
+    public int getFeedSackSalesCount() { return feedSackSalesCount; }
+    public void setFeedSackSalesCount(int feedSackSalesCount) { this.feedSackSalesCount = feedSackSalesCount; }
+    public BigDecimal getFeedSackRevenue() { return feedSackRevenue; }
+    public void setFeedSackRevenue(BigDecimal feedSackRevenue) { this.feedSackRevenue = feedSackRevenue; }
     public BigDecimal getTotalRevenue() { return totalRevenue; }
     public void setTotalRevenue(BigDecimal totalRevenue) { this.totalRevenue = totalRevenue; }
 }
