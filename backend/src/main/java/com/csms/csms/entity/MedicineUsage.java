@@ -1,6 +1,9 @@
 package com.csms.csms.entity;
 
 import jakarta.persistence.*;
+
+import org.hibernate.annotations.DynamicInsert;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -8,6 +11,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "medicine_usage")
+@DynamicInsert
 public class MedicineUsage {
 
     @Id
@@ -29,6 +33,9 @@ public class MedicineUsage {
 
     @Column(name = "unit", length = 60)
     private String unit;
+
+    @Column(name = "usage_time")
+    private String usageTime;
 
     @Column(name = "notes", columnDefinition = "TEXT")
     private String notes;
@@ -67,6 +74,9 @@ public class MedicineUsage {
 
     public String getUnit() { return unit; }
     public void setUnit(String unit) { this.unit = unit; }
+
+    public String getUsageTime() { return usageTime; }
+    public void setUsageTime(String usageTime) { this.usageTime = usageTime; }
 
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }

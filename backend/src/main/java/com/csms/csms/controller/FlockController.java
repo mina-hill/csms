@@ -1,11 +1,12 @@
 package com.csms.csms.controller;
 
+import com.csms.csms.entity.AuditLog;
 import com.csms.csms.entity.Flock;
-import com.csms.csms.entity.FlockAuditLog;
 import com.csms.csms.entity.FlockStatus;
-import com.csms.csms.repository.FlockAuditLogRepository;
+import com.csms.csms.repository.AuditLogRepository;
 import com.csms.csms.repository.FlockRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -21,7 +22,9 @@ import java.util.UUID;
 public class FlockController {
 
     @Autowired private FlockRepository flockRepository;
-    @Autowired private FlockAuditLogRepository auditLogRepository;
+    @Autowired
+    @Qualifier("auditLogRepository")
+    private AuditLogRepository auditLogRepository;
 
     @GetMapping
     public ResponseEntity<List<Flock>> getAllFlocks() {
@@ -40,10 +43,11 @@ public class FlockController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    /** Flock-scoped events from unified {@code audit_log} (newest first). */
     @GetMapping("/{id}/audit")
-    public ResponseEntity<List<FlockAuditLog>> getFlockAudit(@PathVariable UUID id) {
+    public ResponseEntity<List<AuditLog>> getFlockAudit(@PathVariable UUID id) {
         return ResponseEntity.ok(
-                auditLogRepository.findByFlockIdOrderByChangedAtDesc(id));
+                auditLogRepository.findByFlockIdOrderByLoggedAtDesc(id));
     }
 
     @PostMapping
@@ -62,10 +66,12 @@ public class FlockController {
 
         Flock saved = flockRepository.save(flock);
 
-        auditLogRepository.save(new FlockAuditLog(
-                saved.getFlockId(),
+        auditLogRepository.save(new AuditLog(
                 saved.getCreatedBy(),
-                null,
+                "FLOCK_CREATED",
+                "flocks",
+                saved.getFlockId(),
+                saved.getFlockId(),
                 "{\"breed\":\"" + saved.getBreed() +
                         "\",\"initial_qty\":" + saved.getInitialQty() + "}"
         ));
@@ -86,7 +92,6 @@ public class FlockController {
                     .body(new ErrorResponse("Flock is CLOSED and cannot be updated."));
         }
 
-        // Snapshot old values for audit
         String oldValues = "{\"breed\":\"" + flock.getBreed() +
                 "\",\"current_qty\":" + flock.getCurrentQty() +
                 ",\"notes\":\"" + (flock.getNotes() != null ? flock.getNotes() : "") + "\"}";
@@ -101,11 +106,14 @@ public class FlockController {
                 "\",\"current_qty\":" + updated.getCurrentQty() +
                 ",\"notes\":\"" + (updated.getNotes() != null ? updated.getNotes() : "") + "\"}";
 
-        auditLogRepository.save(new FlockAuditLog(
-                updated.getFlockId(),
+        String details = "{\"old_values\":" + oldValues + ",\"new_values\":" + newValues + "}";
+        auditLogRepository.save(new AuditLog(
                 req.getUpdatedBy(),
-                oldValues,
-                newValues
+                "FLOCK_UPDATED",
+                "flocks",
+                updated.getFlockId(),
+                updated.getFlockId(),
+                details
         ));
 
         return ResponseEntity.ok(updated);
@@ -133,11 +141,15 @@ public class FlockController {
 
         Flock closed = flockRepository.save(flock);
 
-        auditLogRepository.save(new FlockAuditLog(
-                closed.getFlockId(),
+        String newValues = "{\"status\":\"CLOSED\",\"close_date\":\"" + closeDate + "\"}";
+        String details = "{\"old_values\":" + oldValues + ",\"new_values\":" + newValues + "}";
+        auditLogRepository.save(new AuditLog(
                 null,
-                oldValues,
-                "{\"status\":\"CLOSED\",\"close_date\":\"" + closeDate + "\"}"
+                "FLOCK_CLOSED",
+                "flocks",
+                closed.getFlockId(),
+                closed.getFlockId(),
+                details
         ));
 
         return ResponseEntity.ok(closed);

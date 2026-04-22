@@ -1,6 +1,10 @@
 package com.csms.csms.entity;
 
 import jakarta.persistence.*;
+
+import org.hibernate.annotations.DynamicInsert;
+import org.hibernate.annotations.Formula;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -8,6 +12,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "feed_purchases")
+@DynamicInsert
 public class FeedPurchase {
 
     @Id
@@ -30,7 +35,8 @@ public class FeedPurchase {
     @Column(name = "cost_per_sack", nullable = false, precision = 10, scale = 2)
     private BigDecimal costPerSack;
 
-    @Column(name = "total_cost", nullable = false, precision = 12, scale = 2)
+    /** DB-generated computed column; map as formula so Hibernate does not write it. */
+    @Formula("sack_count * cost_per_sack")
     private BigDecimal totalCost;
 
     @Column(name = "recorded_by")
@@ -49,7 +55,6 @@ public class FeedPurchase {
         this.purchaseDate = purchaseDate;
         this.sackCount = sackCount;
         this.costPerSack = costPerSack;
-        this.totalCost = costPerSack.multiply(new BigDecimal(sackCount));
     }
 
     // Getters & Setters

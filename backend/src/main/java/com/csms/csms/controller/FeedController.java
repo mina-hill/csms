@@ -8,13 +8,18 @@ import com.csms.csms.repository.FeedPurchaseRepository;
 import com.csms.csms.repository.FeedUsageRepository;
 import com.csms.csms.repository.FeedSaleRepository;
 import com.csms.csms.repository.FeedTypeRepository;
+import com.csms.csms.repository.SupplierRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -30,6 +35,8 @@ public class FeedController {
     private FeedUsageRepository feedUsageRepository;
     @Autowired
     private FeedSaleRepository feedSaleRepository;
+    @Autowired
+    private SupplierRepository supplierRepository;
 
     // ===== FEED TYPES =====
 
@@ -46,7 +53,29 @@ public class FeedController {
     // ===== PURCHASES =====
 
     @PostMapping("/purchases")
-    public ResponseEntity<FeedPurchase> createPurchase(@RequestBody FeedPurchaseRequest request) {
+    public ResponseEntity<?> createPurchase(@RequestBody FeedPurchaseRequest request) {
+        if (request.getFeedTypeId() == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "feedTypeId is required"));
+        }
+        if (request.getSupplierId() == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "supplierId is required"));
+        }
+        if (request.getPurchaseDate() == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "purchaseDate is required"));
+        }
+        if (request.getSacksQty() == null || request.getSacksQty() < 1) {
+            return ResponseEntity.badRequest().body(Map.of("error", "sacksQty must be a positive integer"));
+        }
+        if (request.getCostPerSack() == null || request.getCostPerSack().compareTo(BigDecimal.ZERO) <= 0) {
+            return ResponseEntity.badRequest().body(Map.of("error", "costPerSack must be positive"));
+        }
+        if (feedTypeRepository.findById(request.getFeedTypeId()).isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Feed type not found for id: " + request.getFeedTypeId()));
+        }
+        if (supplierRepository.findById(request.getSupplierId()).isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Supplier not found for id: " + request.getSupplierId()));
+        }
+
         FeedPurchase purchase = new FeedPurchase(
             request.getFeedTypeId(),
             request.getSupplierId(),
@@ -55,7 +84,20 @@ public class FeedController {
             request.getCostPerSack()
         );
         purchase.setRecordedBy(request.getRecordedBy());
-        return ResponseEntity.status(HttpStatus.CREATED).body(feedPurchaseRepository.save(purchase));
+        try {
+            return ResponseEntity.status(HttpStatus.CREATED).body(feedPurchaseRepository.save(purchase));
+        } catch (DataIntegrityViolationException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                    "error", "Could not save feed purchase (check foreign keys and unique constraints).",
+                    "detail", e.getMostSpecificCause() != null ? e.getMostSpecificCause().getMessage() : e.getMessage()
+            ));
+        } catch (DataAccessException e) {
+            Throwable cause = e.getMostSpecificCause();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
+                    "error", "Database error while saving feed purchase.",
+                    "detail", cause != null ? cause.getMessage() : e.getMessage()
+            ));
+        }
     }
 
     @GetMapping("/purchases")
@@ -76,15 +118,69 @@ public class FeedController {
     // ===== USAGE =====
 
     @PostMapping("/usage")
-    public ResponseEntity<FeedUsage> createUsage(@RequestBody FeedUsageRequest request) {
-        FeedUsage usage = new FeedUsage(
-            request.getFlockId(),
-            request.getFeedTypeId(),
-            request.getRecordDate(),
-            request.getSacksUsed()
-        );
-        usage.setRecordedBy(request.getRecordedBy());
-        return ResponseEntity.status(HttpStatus.CREATED).body(feedUsageRepository.save(usage));
+    public ResponseEntity<?> createUsage(@RequestBody FeedUsageRequest request) {
+        if (request.getFlockId() == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "flockId is required"));
+        }
+        if (request.getFeedTypeId() == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "feedTypeId is required"));
+        }
+        if (request.getRecordDate() == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "recordDate is required"));
+        }
+        if (request.getSacksUsed() == null || request.getSacksUsed() < 1) {
+            return ResponseEntity.badRequest().body(Map.of("error", "sacksUsed must be a positive integer"));
+        }
+        if (request.getShift() == null || request.getShift().isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "shift is required (DAY or NIGHT)"));
+        }
+        String shift = request.getShift().trim().toUpperCase();
+        if (!shift.equals("DAY") && !shift.equals("NIGHT")) {
+            return ResponseEntity.badRequest().body(Map.of("error", "shift must be DAY or NIGHT"));
+        }
+
+        try {
+            var existingUsage = feedUsageRepository.findByFlockIdAndFeedTypeIdAndUsageDateAndShift(
+                    request.getFlockId(),
+                    request.getFeedTypeId(),
+                    request.getRecordDate(),
+                    shift
+            );
+
+            FeedUsage usage;
+            HttpStatus status;
+            if (existingUsage.isPresent()) {
+                // Upsert behavior: same flock/feed/date/shift updates the existing row.
+                usage = existingUsage.get();
+                usage.setSacksUsed(request.getSacksUsed());
+                usage.setRecordedBy(request.getRecordedBy());
+                status = HttpStatus.OK;
+            } else {
+                usage = new FeedUsage(
+                        request.getFlockId(),
+                        request.getFeedTypeId(),
+                        request.getRecordDate(),
+                        request.getSacksUsed(),
+                        shift
+                );
+                usage.setRecordedBy(request.getRecordedBy());
+                status = HttpStatus.CREATED;
+            }
+
+            FeedUsage saved = feedUsageRepository.save(usage);
+            return ResponseEntity.status(status).body(saved);
+        } catch (DataIntegrityViolationException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                    "error", "Could not save feed usage (check duplicates/constraints).",
+                    "detail", e.getMostSpecificCause() != null ? e.getMostSpecificCause().getMessage() : e.getMessage()
+            ));
+        } catch (DataAccessException e) {
+            Throwable cause = e.getMostSpecificCause();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
+                    "error", "Database error while saving feed usage.",
+                    "detail", cause != null ? cause.getMessage() : e.getMessage()
+            ));
+        }
     }
 
     @GetMapping("/usage")
@@ -111,7 +207,6 @@ public class FeedController {
     @PostMapping("/sales")
     public ResponseEntity<FeedSale> createSale(@RequestBody FeedSaleRequest request) {
        FeedSale sale = new FeedSale(
-    request.getFeedTypeId(),
     request.getSaleDate(),
     request.getSacksQty(),
     request.getPricePerSack(),
@@ -166,6 +261,7 @@ class FeedUsageRequest {
     private UUID feedTypeId;
     private LocalDate recordDate;
     private Integer sacksUsed;
+    private String shift;
     private UUID recordedBy;
 
     public UUID getFlockId() { return flockId; }
@@ -176,20 +272,19 @@ class FeedUsageRequest {
     public void setRecordDate(LocalDate recordDate) { this.recordDate = recordDate; }
     public Integer getSacksUsed() { return sacksUsed; }
     public void setSacksUsed(Integer sacksUsed) { this.sacksUsed = sacksUsed; }
+    public String getShift() { return shift; }
+    public void setShift(String shift) { this.shift = shift; }
     public UUID getRecordedBy() { return recordedBy; }
     public void setRecordedBy(UUID recordedBy) { this.recordedBy = recordedBy; }
 }
 
 class FeedSaleRequest {
-    private UUID feedTypeId;
     private LocalDate saleDate;
     private Integer sacksQty;
     private java.math.BigDecimal pricePerSack;
     private String buyerName;
     private UUID recordedBy;
 
-    public UUID getFeedTypeId() { return feedTypeId; }
-    public void setFeedTypeId(UUID feedTypeId) { this.feedTypeId = feedTypeId; }
     public LocalDate getSaleDate() { return saleDate; }
     public void setSaleDate(LocalDate saleDate) { this.saleDate = saleDate; }
     public Integer getSacksQty() { return sacksQty; }

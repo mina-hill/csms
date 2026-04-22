@@ -3,6 +3,8 @@ package com.csms.csms.controller;
 import com.csms.csms.entity.BradaPurchase;
 import com.csms.csms.repository.BradaPurchaseRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -22,19 +24,48 @@ public class BradaController {
     // ===== PURCHASES =====
 
     @PostMapping("/purchases")
-    public ResponseEntity<BradaPurchase> createPurchase(@RequestBody BradaPurchaseRequest request) {
+    public ResponseEntity<?> createPurchase(@RequestBody BradaPurchaseRequest request) {
+        if (request.getFlockId() == null) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("error", "flockId is required"));
+        }
+        if (request.getSupplierId() == null) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("error", "supplierId is required"));
+        }
+        if (request.getPurchaseDate() == null) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("error", "purchaseDate is required"));
+        }
+        if (request.getQuantity() == null || request.getQuantity() < 1) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("error", "quantity must be a positive integer"));
+        }
+        if (request.getUnitCost() == null || request.getUnitCost().compareTo(java.math.BigDecimal.ZERO) <= 0) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("error", "unitCost must be positive"));
+        }
+
         BradaPurchase purchase = new BradaPurchase(
-    request.getFlockId(),
-    request.getSupplierId(),
-    request.getPurchaseDate(),
-    request.getQuantity(),
-    request.getUnitCost()
-);
+            request.getFlockId(),
+            request.getSupplierId(),
+            request.getPurchaseDate(),
+            request.getQuantity(),
+            request.getUnitCost()
+        );
         /*if (request.getFlockId() != null) {
             purchase.setFlockId(request.getFlockId());
         }*/
         purchase.setRecordedBy(request.getRecordedBy());
-        return ResponseEntity.status(HttpStatus.CREATED).body(bradaPurchaseRepository.save(purchase));
+        try {
+            return ResponseEntity.status(HttpStatus.CREATED).body(bradaPurchaseRepository.save(purchase));
+        } catch (DataIntegrityViolationException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(java.util.Map.of(
+                    "error", "Could not save brada purchase (check foreign keys and constraints).",
+                    "detail", e.getMostSpecificCause() != null ? e.getMostSpecificCause().getMessage() : e.getMessage()
+            ));
+        } catch (DataAccessException e) {
+            Throwable cause = e.getMostSpecificCause();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(java.util.Map.of(
+                    "error", "Database error while saving brada purchase.",
+                    "detail", cause != null ? cause.getMessage() : e.getMessage()
+            ));
+        }
     }
 
     @GetMapping("/purchases")

@@ -1,5 +1,6 @@
 package com.csms.csms.controller;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.csms.csms.entity.OtherSale;
 import com.csms.csms.entity.OtherSaleCategory;
 import com.csms.csms.repository.OtherSaleRepository;
@@ -119,6 +120,7 @@ class OtherSaleRequest {
     private LocalDate saleDate;
     private String category;
     private String description;
+    @JsonAlias({"buyerName", "buyer_name"})
     private String buyer;
     private BigDecimal amount;
 

@@ -7,7 +7,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "feed_usage", 
-       uniqueConstraints = @UniqueConstraint(columnNames = {"flock_id", "feed_type_id", "usage_date"}))
+       uniqueConstraints = @UniqueConstraint(columnNames = {"flock_id", "feed_type_id", "usage_date", "shift"}))
 public class FeedUsage {
 
     @Id
@@ -27,6 +27,9 @@ public class FeedUsage {
     @Column(name = "sacks_used", nullable = false)
     private Integer sacksUsed;
 
+    @Column(name = "shift", nullable = false, length = 10)
+    private String shift;
+
     @Column(name = "recorded_by")
     private UUID recordedBy;
 
@@ -36,11 +39,12 @@ public class FeedUsage {
     // Constructors
     public FeedUsage() {}
 
-    public FeedUsage(UUID flockId, UUID feedTypeId, LocalDate usageDate, Integer sacksUsed) {
+    public FeedUsage(UUID flockId, UUID feedTypeId, LocalDate usageDate, Integer sacksUsed, String shift) {
         this.flockId = flockId;
         this.feedTypeId = feedTypeId;
         this.usageDate = usageDate;
         this.sacksUsed = sacksUsed;
+        this.shift = shift;
     }
 
     // Getters & Setters
@@ -58,6 +62,9 @@ public class FeedUsage {
 
     public Integer getSacksUsed() { return sacksUsed; }
     public void setSacksUsed(Integer sacksUsed) { this.sacksUsed = sacksUsed; }
+
+    public String getShift() { return shift; }
+    public void setShift(String shift) { this.shift = shift; }
 
     public UUID getRecordedBy() { return recordedBy; }
     public void setRecordedBy(UUID recordedBy) { this.recordedBy = recordedBy; }

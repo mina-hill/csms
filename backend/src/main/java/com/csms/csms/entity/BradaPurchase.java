@@ -1,6 +1,10 @@
 package com.csms.csms.entity;
 
 import jakarta.persistence.*;
+
+import org.hibernate.annotations.DynamicInsert;
+import org.hibernate.annotations.Formula;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -8,6 +12,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "brada_purchases")
+@DynamicInsert
 public class BradaPurchase {
 
     @Id
@@ -30,7 +35,7 @@ public class BradaPurchase {
     @Column(name = "unit_cost", nullable = false, precision = 10, scale = 2)
     private BigDecimal unitCost;
 
-    @Column(name = "total_cost", nullable = false, precision = 12, scale = 2)
+    @Formula("quantity * unit_cost")
     private BigDecimal totalCost;
 
     @Column(name = "recorded_by")
@@ -49,7 +54,6 @@ public class BradaPurchase {
         this.purchaseDate = purchaseDate;
         this.quantity = quantity;
         this.unitCost = unitCost;
-        this.totalCost = unitCost.multiply(new BigDecimal(quantity));
     }
 
     // Getters & Setters

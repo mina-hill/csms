@@ -1,6 +1,10 @@
 package com.csms.csms.entity;
 
 import jakarta.persistence.*;
+
+import org.hibernate.annotations.DynamicInsert;
+import org.hibernate.annotations.Formula;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -8,6 +12,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "medicine_purchases")
+@DynamicInsert
 public class MedicinePurchase {
 
     @Id
@@ -30,7 +35,11 @@ public class MedicinePurchase {
     @Column(name = "unit_cost", nullable = false, precision = 10, scale = 2)
     private BigDecimal unitCost;
 
-    @Column(name = "total_cost", nullable = false, precision = 12, scale = 2)
+    /**
+     * Matches DB generated column {@code total_cost}; mapped as a formula so Hibernate 6 does not
+     * emit it in INSERT (insertable=false is not always honored for generated columns).
+     */
+    @Formula("quantity * unit_cost")
     private BigDecimal totalCost;
 
     @Column(name = "unit", length = 60)
@@ -39,6 +48,7 @@ public class MedicinePurchase {
     @Column(name = "recorded_by")
     private UUID recordedBy;
 
+    /** Same as feed/brada purchases: DB default (e.g. {@code now()}). */
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private OffsetDateTime createdAt;
 
@@ -52,7 +62,6 @@ public class MedicinePurchase {
         this.purchaseDate = purchaseDate;
         this.quantity = quantity;
         this.unitCost = unitCost;
-        this.totalCost = unitCost.multiply(new BigDecimal(quantity));
     }
 
     // Getters & Setters

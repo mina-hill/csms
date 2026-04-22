@@ -1,5 +1,6 @@
 package com.csms.csms.controller;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.csms.csms.entity.Flock;
 import com.csms.csms.entity.FlockSale;
 import com.csms.csms.entity.FlockStatus;
@@ -9,12 +10,16 @@ import com.csms.csms.repository.FlockRepository;
 import com.csms.csms.repository.FlockSaleRepository;
 import com.csms.csms.repository.OtherSaleRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -75,17 +80,51 @@ public class SalesController {
                     .body(Map.of("error", "Cannot record a sale for a CLOSED flock"));
         }
 
+        BigDecimal weightKg = request.getWeightPerBirdKg().setScale(3, RoundingMode.HALF_UP);
+        BigDecimal pricePerKg = request.getPricePerKg().setScale(2, RoundingMode.HALF_UP);
         FlockSale sale = new FlockSale(
-                request.getFlockId(),
-                request.getSaleDate(),
-                request.getBuyerName(),
-                request.getQtySold(),
-                request.getWeightPerBirdKg(),
-                request.getPricePerKg()
+            request.getFlockId(),
+            request.getSaleDate(),
+            request.getBuyerName().trim(),
+            request.getQtySold(),
+            weightKg,
+            pricePerKg
         );
         sale.setRecordedBy(request.getRecordedBy());
-
-        return ResponseEntity.status(HttpStatus.CREATED).body(flockSaleRepository.save(sale));
+        try {
+            FlockSale saved = flockSaleRepository.save(sale);
+            BigDecimal lineTotal = weightKg.multiply(pricePerKg)
+                    .multiply(BigDecimal.valueOf(request.getQtySold()))
+                    .setScale(2, RoundingMode.HALF_UP);
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("saleId", saved.getSaleId());
+            body.put("flockId", saved.getFlockId());
+            body.put("saleDate", saved.getSaleDate());
+            body.put("buyerName", saved.getBuyerName());
+            body.put("qtySold", saved.getQtySold());
+            body.put("weightPerBirdKg", saved.getWeightPerBirdKg());
+            body.put("pricePerKg", saved.getPricePerKg());
+            body.put("totalAmount", lineTotal);
+            body.put("recordedBy", saved.getRecordedBy());
+            body.put("createdAt", saved.getCreatedAt());
+            return ResponseEntity.status(HttpStatus.CREATED).body(body);
+        } catch (DataIntegrityViolationException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                    "error", "Could not save flock sale (check constraints/foreign keys).",
+                    "detail", e.getMostSpecificCause() != null ? e.getMostSpecificCause().getMessage() : e.getMessage()
+            ));
+        } catch (DataAccessException e) {
+            Throwable cause = e.getMostSpecificCause();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
+                    "error", "Database error while saving flock sale.",
+                    "detail", cause != null ? cause.getMessage() : e.getMessage()
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
+                    "error", "Unexpected error while saving flock sale.",
+                    "detail", e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()
+            ));
+        }
     }
 
     @GetMapping("/flock")
@@ -145,7 +184,25 @@ public class SalesController {
                 request.getAmount()
         );
 
-        return ResponseEntity.status(HttpStatus.CREATED).body(otherSaleRepository.save(sale));
+        try {
+            return ResponseEntity.status(HttpStatus.CREATED).body(otherSaleRepository.save(sale));
+        } catch (DataIntegrityViolationException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                    "error", "Could not save other sale (check constraints).",
+                    "detail", e.getMostSpecificCause() != null ? e.getMostSpecificCause().getMessage() : e.getMessage()
+            ));
+        } catch (DataAccessException e) {
+            Throwable cause = e.getMostSpecificCause();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
+                    "error", "Database error while saving other sale.",
+                    "detail", cause != null ? cause.getMessage() : e.getMessage()
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
+                    "error", "Unexpected error while saving other sale.",
+                    "detail", e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()
+            ));
+        }
     }
 
     @GetMapping("/other")
@@ -233,6 +290,7 @@ class SalesOtherSaleRequest {
     private BigDecimal amount;
     private LocalDate saleDate;
     private String description;
+    @JsonAlias({"buyer", "buyer_name"})
     private String buyerName;
 
     public OtherSaleCategory getCategory() { return category; }

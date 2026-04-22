@@ -1,7 +1,10 @@
 package com.csms.csms.controller;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.csms.csms.entity.Expense;
 import com.csms.csms.entity.ExpenseCategory;
+import com.csms.csms.json.ExpenseCategoryJsonDeserializer;
 import com.csms.csms.repository.ExpenseRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -123,6 +126,7 @@ public class ExpenseController {
 // ===== DTO =====
 
 class ExpenseRequest {
+    @JsonDeserialize(using = ExpenseCategoryJsonDeserializer.class)
     private ExpenseCategory category;
     private BigDecimal amount;
     private String description;
@@ -137,8 +141,10 @@ class ExpenseRequest {
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
     public LocalDate getExpenseDate() { return expenseDate; }
+    @JsonAlias({"expense_date"})
     public void setExpenseDate(LocalDate expenseDate) { this.expenseDate = expenseDate; }
     public UUID getFlockId() { return flockId; }
+    @JsonAlias({"flock_id"})
     public void setFlockId(UUID flockId) { this.flockId = flockId; }
     public UUID getRecordedBy() { return recordedBy; }
     public void setRecordedBy(UUID recordedBy) { this.recordedBy = recordedBy; }

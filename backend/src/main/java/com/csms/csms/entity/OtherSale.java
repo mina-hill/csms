@@ -26,8 +26,8 @@ public class OtherSale {
     @Column(name = "description", nullable = false, length = 255)
     private String description;
 
-    @Column(name = "buyer", length = 120)
-    private String buyer;
+    @Column(name = "buyer_name", length = 120)
+    private String buyerName;
 
     @Column(name = "amount", nullable = false, precision = 12, scale = 2)
     private BigDecimal amount;
@@ -38,7 +38,7 @@ public class OtherSale {
         this.saleDate = saleDate;
         this.category = category;
         this.description = description;
-        this.buyer = buyer;
+        this.buyerName = buyer;
         this.amount = amount;
     }
 
@@ -77,11 +77,11 @@ public class OtherSale {
     }
 
     public String getBuyer() {
-        return buyer;
+        return buyerName;
     }
 
     public void setBuyer(String buyer) {
-        this.buyer = buyer;
+        this.buyerName = buyer;
     }
 
     public BigDecimal getAmount() {

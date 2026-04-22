@@ -170,6 +170,7 @@ public class WeeklySummaryController {
                 existing.isPresent() ? "WEEKLY_SUMMARY_UPDATED" : "WEEKLY_SUMMARY_CREATED",
                 "weekly_summary",
                 saved.getSummaryId(),
+                req.getFlockId(),
                 "{\"flock_id\":\"" + req.getFlockId()
                         + "\",\"week_number\":" + req.getWeekNumber()
                         + ",\"fcr_value\":" + (fcrValue != null ? fcrValue : "null") + "}"
