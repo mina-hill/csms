@@ -7,25 +7,23 @@ import org.hibernate.annotations.Immutable;
 @Entity
 @Table(name = "v_mortality_report")
 @Immutable
+@IdClass(VMortalityReportId.class) // 1. Link the new ID class
 public class VMortalityReport {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
-    @Column(name = "rowid")
-    private Long rowId;
-
+    @Id // 2. Keep this as ID
     @Column(name = "flock_id")
     private UUID flockId;
 
+    @Id // 3. ADD THIS as an ID
+    @Column(name = "record_date")
+    private LocalDate recordDate;
     @Column(name = "breed")
     private String breed;
 
     @Column(name = "initial_qty")
     private Integer initialQty;
 
-    @Column(name = "record_date")
-    private LocalDate recordDate;
-
+    
     @Column(name = "daily_deaths")
     private Integer dailyDeaths;
 
@@ -35,23 +33,13 @@ public class VMortalityReport {
     @Column(name = "mortality_pct")
     private BigDecimal mortalityPct;
 
-    // Constructors
     public VMortalityReport() {}
 
-    // Getters only (immutable)
-    public Long getRowId() { return rowId; }
-
     public UUID getFlockId() { return flockId; }
-
     public String getBreed() { return breed; }
-
     public Integer getInitialQty() { return initialQty; }
-
     public LocalDate getRecordDate() { return recordDate; }
-
     public Integer getDailyDeaths() { return dailyDeaths; }
-
     public Integer getCumulativeDeaths() { return cumulativeDeaths; }
-
     public BigDecimal getMortalityPct() { return mortalityPct; }
 }

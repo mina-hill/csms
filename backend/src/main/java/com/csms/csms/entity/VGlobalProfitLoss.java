@@ -3,15 +3,14 @@ package com.csms.csms.entity;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
 import org.hibernate.annotations.Immutable;
+import java.util.UUID;
+
 @Entity
 @Table(name = "v_global_profit_loss")
 @Immutable
 public class VGlobalProfitLoss {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
-    @Column(name = "rowid")
-    private Long rowId;
+   @Id // Map the ID to an existing column so Hibernate stops looking for "id"
 
     @Column(name = "total_revenue")
     private BigDecimal totalRevenue;
@@ -22,15 +21,10 @@ public class VGlobalProfitLoss {
     @Column(name = "net_profit")
     private BigDecimal netProfit;
 
-    // Constructors
     public VGlobalProfitLoss() {}
 
-    // Getters only (immutable)
-    public Long getRowId() { return rowId; }
-
+    //public UUID getId() { return id; }
     public BigDecimal getTotalRevenue() { return totalRevenue; }
-
     public BigDecimal getTotalCashOutflow() { return totalCashOutflow; }
-
     public BigDecimal getNetProfit() { return netProfit; }
 }
