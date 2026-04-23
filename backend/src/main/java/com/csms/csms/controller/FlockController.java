@@ -209,4 +209,8 @@ class ErrorResponse {
     public ErrorResponse(String m) { this.message = m; }
     public String getMessage()     { return message; }
     public void setMessage(String m) { this.message = m; }
+    @Override
+public String toString() {
+    return message; // or whatever your field is named
+}
 }
