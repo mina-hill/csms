@@ -20,11 +20,11 @@ public interface DailyMortalityRepository extends JpaRepository<DailyMortality, 
             UUID flockId, LocalDate start, LocalDate end);
 
     /**
-     * Used by the controller to check for the unique constraint
-     * (flock_id, record_date, shift) before inserting.
+     * Used by the controller to avoid duplicate exact entries while still allowing
+     * separate Hospital/Shed rows for the same flock/date/shift.
      */
-    Optional<DailyMortality> findByFlockIdAndRecordDateAndShift(
-            UUID flockId, LocalDate recordDate, String shift);
+    Optional<DailyMortality> findByFlockIdAndRecordDateAndShiftAndType(
+            UUID flockId, LocalDate recordDate, String shift, String type);
 
     /**
      * Used to compute cumulative mortality for a flock up to a date.

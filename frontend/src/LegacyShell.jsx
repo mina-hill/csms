@@ -19,6 +19,13 @@ export default function LegacyShell() {
 
   useEffect(() => {
     ensureLegacyScriptLoaded()
+    import('html2pdf.js')
+      .then((mod) => {
+        window.__html2pdf = mod.default
+      })
+      .catch(() => {
+        window.__html2pdf = null
+      })
   }, [])
 
   return <div dangerouslySetInnerHTML={{ __html: bodyHtml }} />

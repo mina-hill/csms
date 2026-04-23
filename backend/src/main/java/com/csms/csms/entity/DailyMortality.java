@@ -1,12 +1,16 @@
 package com.csms.csms.entity;
 
 import jakarta.persistence.*;
+
+import org.hibernate.annotations.DynamicInsert;
+
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Entity
 @Table(name = "daily_mortality")
+@DynamicInsert
 public class DailyMortality {
 
     @Id
@@ -27,6 +31,9 @@ public class DailyMortality {
     @Column(name = "shift", nullable = false, length = 10)
     private String shift;
 
+    @Column(name = "type")
+    private String type;
+
     @Column(name = "recorded_by")
     private UUID recordedBy;
 
@@ -36,11 +43,12 @@ public class DailyMortality {
     public DailyMortality() {}
 
     public DailyMortality(UUID flockId, LocalDate recordDate,
-                          Integer count, String shift, UUID recordedBy) {
+                          Integer count, String shift, String type, UUID recordedBy) {
         this.flockId    = flockId;
         this.recordDate = recordDate;
         this.count      = count;
         this.shift      = shift;
+        this.type       = type;
         this.recordedBy = recordedBy;
     }
 
@@ -58,6 +66,9 @@ public class DailyMortality {
 
     public String getShift()                         { return shift; }
     public void setShift(String v)                   { this.shift = v; }
+
+    public String getType()                          { return type; }
+    public void setType(String v)                    { this.type = v; }
 
     public UUID getRecordedBy()                      { return recordedBy; }
     public void setRecordedBy(UUID v)                { this.recordedBy = v; }

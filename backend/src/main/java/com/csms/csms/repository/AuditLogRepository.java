@@ -19,4 +19,10 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
      * Used by AuditController GET /audit?table=... to filter by domain table.
      */
     List<AuditLog> findByTableNameOrderByLoggedAtDesc(String tableName);
+
+    List<AuditLog> findByEntityTypeOrderByLoggedAtDesc(String entityType);
+
+    List<AuditLog> findByFlockIdOrderByLoggedAtDesc(UUID flockId);
+
+    List<AuditLog> findByFlockIdAndEntityTypeOrderByLoggedAtDesc(UUID flockId, String entityType);
 }

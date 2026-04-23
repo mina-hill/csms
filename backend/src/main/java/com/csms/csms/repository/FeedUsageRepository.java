@@ -6,6 +6,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -24,4 +25,11 @@ public interface FeedUsageRepository extends JpaRepository<FeedUsage, UUID> {
     List<FeedUsage> findByFeedTypeIdAndUsageDateBetween(UUID feedTypeId, LocalDate startDate, LocalDate endDate);
 
     List<FeedUsage> findByFlockIdAndFeedTypeIdAndUsageDateBetween(UUID flockId, UUID feedTypeId, LocalDate startDate, LocalDate endDate);
+
+    Optional<FeedUsage> findByFlockIdAndFeedTypeIdAndUsageDateAndShift(
+            UUID flockId,
+            UUID feedTypeId,
+            LocalDate usageDate,
+            String shift
+    );
 }

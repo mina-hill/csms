@@ -12,11 +12,11 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * AuditController
- * ───────────────
- * GET  /api/audit           — full system audit log, newest-first
- * GET  /api/audit?table=... — filter by table_name
- * POST /api/audit           — write a single entry (used by frontend client-side actions)
+ * GET  /api/audit — full log, newest first
+ * GET  /api/audit?flockId=uuid — events for that flock (any entity_type)
+ * GET  /api/audit?table=... or ?entityType=... — filter by entity type (legacy table= supported)
+ * GET  /api/audit?flockId=...&entityType=... — both
+ * POST /api/audit — optional manual entry (prefer server-side writers)
  */
 @RestController
 @RequestMapping("/api/audit")
@@ -29,11 +29,29 @@ public class AuditController {
 
     @GetMapping
     public ResponseEntity<List<AuditLog>> getAuditLog(
-            @RequestParam(required = false) String table) {
+            @RequestParam(required = false) String table,
+            @RequestParam(required = false) String entityType,
+            @RequestParam(required = false) UUID flockId) {
 
-        if (table != null && !table.isBlank()) {
+        String type = (entityType != null && !entityType.isBlank())
+                ? entityType
+                : (table != null && !table.isBlank() ? table : null);
+
+        if (flockId != null && type != null) {
             return ResponseEntity.ok(
-                    auditLogRepository.findByTableNameOrderByLoggedAtDesc(table));
+                    auditLogRepository.findByFlockIdAndEntityTypeOrderByLoggedAtDesc(flockId, type));
+        }
+        if (flockId != null) {
+            return ResponseEntity.ok(
+                    auditLogRepository.findByFlockIdOrderByLoggedAtDesc(flockId));
+        }
+        if (type != null) {
+            List<AuditLog> byEntity = auditLogRepository.findByEntityTypeOrderByLoggedAtDesc(type);
+            if (!byEntity.isEmpty()) {
+                return ResponseEntity.ok(byEntity);
+            }
+            return ResponseEntity.ok(
+                    auditLogRepository.findByTableNameOrderByLoggedAtDesc(type));
         }
         return ResponseEntity.ok(
                 auditLogRepository.findAllByOrderByLoggedAtDesc());
@@ -46,11 +64,18 @@ public class AuditController {
         if (req.getAction() == null || req.getAction().isBlank()) {
             return ResponseEntity.badRequest().build();
         }
+        String et = (req.getEntityType() != null && !req.getEntityType().isBlank())
+                ? req.getEntityType()
+                : req.getTableName();
+        if (et == null || et.isBlank()) {
+            et = "manual";
+        }
         AuditLog entry = new AuditLog(
                 req.getUserId(),
                 req.getAction(),
-                req.getTableName(),
+                et,
                 req.getRecordId(),
+                req.getFlockId(),
                 req.getDetails()
         );
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -58,13 +83,13 @@ public class AuditController {
     }
 }
 
-// ── DTO ───────────────────────────────────────────────────────────────────────
-
 class AuditEntryRequest {
     private UUID   userId;
     private String action;
     private String tableName;
+    private String entityType;
     private UUID   recordId;
+    private UUID   flockId;
     private String details;
 
     public AuditEntryRequest() {}
@@ -78,8 +103,14 @@ class AuditEntryRequest {
     public String getTableName()           { return tableName; }
     public void   setTableName(String v)   { this.tableName = v; }
 
+    public String getEntityType()          { return entityType; }
+    public void   setEntityType(String v)  { this.entityType = v; }
+
     public UUID   getRecordId()             { return recordId; }
     public void   setRecordId(UUID v)       { this.recordId = v; }
+
+    public UUID   getFlockId()              { return flockId; }
+    public void   setFlockId(UUID v)        { this.flockId = v; }
 
     public String getDetails()             { return details; }
     public void   setDetails(String v)     { this.details = v; }

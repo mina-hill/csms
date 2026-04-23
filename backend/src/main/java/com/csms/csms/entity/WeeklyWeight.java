@@ -1,6 +1,9 @@
 package com.csms.csms.entity;
 
 import jakarta.persistence.*;
+
+import org.hibernate.annotations.DynamicInsert;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -8,6 +11,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "weekly_weight")
+@DynamicInsert
 public class WeeklyWeight {
 
     @Id

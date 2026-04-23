@@ -94,12 +94,19 @@
       </div>
       <div class="tab-pills" id="daily-tabs">
         <button class="tab-pill on" data-dtab="mortality">Mortality Entries</button>
+        <button class="tab-pill" data-dtab="daily-record">Daily Records</button>
         <button class="tab-pill" data-dtab="weekly">Weekly Records</button>
       </div>
       <div id="daily-mortality-pane">
         <div class="card"><table>
           <thead><tr><th>Date</th><th>Flock</th><th>Deaths</th><th>Cumulative</th><th>Remaining Birds</th><th>Recorded By</th></tr></thead>
           <tbody id="mort-tbody"><tr><td colspan="6"><div class="empty" style="padding:20px"><div class="et">No mortality records yet.</div></div></td></tr></tbody>
+        </table></div>
+      </div>
+      <div id="daily-daily-pane" style="display:none">
+        <div class="card"><table>
+          <thead><tr><th>Date</th><th>Flock</th><th>Type</th><th>Item</th><th>Quantity</th><th>Shift / Time / Notes</th></tr></thead>
+          <tbody id="daily-record-tbody"><tr><td colspan="6"><div class="empty" style="padding:20px"><div class="et">No feed or medicine usage yet. Use Record Feed or Record Medicine above.</div></div></td></tr></tbody>
         </table></div>
       </div>
       <div id="daily-weight-pane" style="display:none">
@@ -114,8 +121,9 @@
     <div class="view" id="view-sales">
       <div class="vtop">
         <div class="vtop-row">
-          <div><div class="vtitle">Flock Sales</div><div class="vsub">Record bird sales and other revenue</div></div>
+          <div><div class="vtitle">Flock Sales</div><div class="vsub">Record bird sales, sacks sales, and other revenue</div></div>
           <div style="display:flex;gap:8px">
+            <button class="btn btn-outline" id="btn-feed-sale">💸 Sacks Sale</button>
             <button class="btn btn-outline" id="btn-other-sale">＋ Other Sale</button>
             <button class="btn btn-primary" id="btn-flock-sale">＋ Record Flock Sale</button>
           </div>
@@ -140,9 +148,8 @@
     <div class="view" id="view-feed">
       <div class="vtop">
         <div class="vtop-row">
-          <div><div class="vtitle">Feed Management</div><div class="vsub">Purchases · Usage · Sack sales · Stock report</div></div>
+          <div><div class="vtitle">Feed Management</div><div class="vsub">Purchases · Usage · Stock report</div></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-outline btn-sm" id="btn-feed-sale">💸 Sell Sacks</button>
             <button class="btn btn-outline btn-sm" id="btn-feed-usage">📤 Record Usage</button>
             <button class="btn btn-primary btn-sm" id="btn-feed-buy">＋ Purchase Feed</button>
           </div>
@@ -176,9 +183,8 @@
     <div class="view" id="view-medicine">
       <div class="vtop">
         <div class="vtop-row">
-          <div><div class="vtitle">Medicine Inventory</div><div class="vsub">Purchase · Usage · Stock monitoring</div></div>
+          <div><div class="vtitle">Medicine Inventory</div><div class="vsub">Purchase · Stock monitoring (usage recorded in Daily Records)</div></div>
           <div style="display:flex;gap:8px">
-            <button class="btn btn-outline btn-sm" id="btn-med-usage">📤 Record Usage</button>
             <button class="btn btn-primary btn-sm" id="btn-med-buy">＋ Purchase Medicine</button>
           </div>
         </div>
@@ -292,7 +298,8 @@
         <div class="vtitle">Reports & Analytics</div>
         <div class="vsub">Mortality · FCR · P&L · Flock Performance · Sales Summary · Expense Summary · Resource Consumption</div>
       </div>
-      <div class="tab-pills" id="rpt-tabs">
+      <div class="rpt-toolbar">
+        <div class="tab-pills" id="rpt-tabs">
         <button class="tab-pill on" data-rtab="mortality">📉 Mortality</button>
         <button class="tab-pill" data-rtab="fcr">🔄 FCR</button>
         <button class="tab-pill" data-rtab="pnl">💹 P&amp;L</button>
@@ -303,6 +310,8 @@
         <button class="tab-pill" data-rtab="med-supplier">💊 Medicine by Supplier</button>
         <button class="tab-pill" data-rtab="brada-rpt">🪨 Brada Report</button>
         <button class="tab-pill" data-rtab="feed-rpt">🌾 Feed Report</button>
+        </div>
+        <button type="button" class="btn btn-outline" id="btn-rpt-pdf" title="Download this report as PDF">📄 Download PDF</button>
       </div>
       <div id="rpt-content"></div>
     </div>
@@ -615,7 +624,7 @@
     <div class="mb">
       <div class="fr">
         <div class="fg" id="fg-os-d"><label class="fl">Sale Date *</label><input class="fi" id="os-date" type="date"><span class="ferr">Required</span></div>
-        <div class="fg" id="fg-os-cat"><label class="fl">Category *</label><select class="fi" id="os-cat"><option value="">— Select —</option><option>Manure</option><option>Equipment</option><option>By-product</option><option>Sacks Sale</option><option>Other</option></select><span class="ferr">Required</span></div>
+        <div class="fg" id="fg-os-cat"><label class="fl">Category *</label><select class="fi" id="os-cat"><option value="">— Select —</option><option>Manure</option><option>Equipment</option><option>By-product</option><option>Other</option></select><span class="ferr">Required</span></div>
       </div>
       <div class="fr">
         <div class="fg" id="fg-os-desc"><label class="fl">Description *</label><input class="fi" id="os-desc" placeholder="e.g. Manure sold to Raza Farm"><span class="ferr">Required</span></div>
@@ -698,11 +707,10 @@
     <div class="mh"><div><div class="mt">Record Sacks Sale</div><div class="mt-sub">US-014 — Sell surplus feed sacks</div></div><button class="mx" data-close="m-feed-sale">×</button></div>
     <div class="mb">
       <div class="fr">
-        <div class="fg" id="fg-fsl-ft"><label class="fl">Feed Type *</label><select class="fi" id="fsl-type"><option value="">— Select —</option></select><span class="ferr">Required</span></div>
         <div class="fg" id="fg-fsl-b"><label class="fl">Buyer *</label><input class="fi" id="fsl-buyer" placeholder="Buyer name"><span class="ferr">Required</span></div>
       </div>
       <div class="fr thirds">
-        <div class="fg" id="fg-fsl-q"><label class="fl">Sacks *</label><input class="fi" id="fsl-qty" type="number" min="1"><span class="ferr">Required</span><div class="fhint" id="fsl-hint"></div></div>
+        <div class="fg" id="fg-fsl-q"><label class="fl">Sacks *</label><input class="fi" id="fsl-qty" type="number" min="1"><span class="ferr">Required</span></div>
         <div class="fg" id="fg-fsl-c"><label class="fl">Price / Sack (₨) *</label><input class="fi" id="fsl-price" type="number" min="1"><span class="ferr">Required</span></div>
         <div class="fg"><label class="fl">Total Revenue</label><div class="calc-box" id="fsl-total">₨ —</div></div>
       </div>
@@ -736,27 +744,6 @@
       </div>
     </div>
     <div class="mf"><button class="btn btn-outline" data-close="m-med-buy">Cancel</button><button class="btn btn-primary" id="do-med-buy">Record Purchase</button></div>
-  </div>
-</div>
-
-<!-- ══════ MODAL: MEDICINE USAGE (US-018) ══════ -->
-<div class="overlay" id="m-med-use">
-  <div class="modal">
-    <div class="mh"><div><div class="mt">Record Medicine Usage</div><div class="mt-sub">US-018</div></div><button class="mx" data-close="m-med-use">×</button></div>
-    <div class="mb">
-      <div class="fr">
-        <div class="fg" id="fg-mu-f"><label class="fl">Flock *</label><select class="fi" id="mu-flock"><option value="">— Select Active Flock —</option></select><span class="ferr">Required</span></div>
-        <div class="fg" id="fg-mu-m"><label class="fl">Medicine *</label><select class="fi" id="mu-med"><option value="">— Select —</option></select><span class="ferr">Required</span></div>
-      </div>
-      <div class="fr">
-        <div class="fg" id="fg-mu-q"><label class="fl">Quantity Used (units) *</label><input class="fi" id="mu-qty" type="number" min="1"><span class="ferr">Required</span><div class="fhint" id="mu-hint"></div></div>
-        <div class="fg" id="fg-mu-u"><label class="fl">Unit *</label><select class="fi" id="mu-unit"><option value="">— Select —</option><option>bottle</option><option>ml</option><option>kg</option><option>g</option><option>sachet</option><option>tablet</option><option>pack</option><option value="other">Other</option></select><span class="ferr">Required</span></div>
-        <div class="fg" id="fg-mu-ou" style="display:none"><label class="fl">Other Unit *</label><input class="fi" id="mu-unit-other" placeholder="Type unit"><span class="ferr">Required</span></div>
-        <div class="fg" id="fg-mu-d"><label class="fl">Date *</label><input class="fi" id="mu-date" type="date"><span class="ferr">Required</span></div>
-      </div>
-      <div class="fr full"><div class="fg"><label class="fl">Notes / Dosage Details</label><textarea class="fi" id="mu-notes" style="min-height:50px"></textarea></div></div>
-    </div>
-    <div class="mf"><button class="btn btn-outline" data-close="m-med-use">Cancel</button><button class="btn btn-primary" id="do-med-use">Save Usage</button></div>
   </div>
 </div>
 
@@ -801,7 +788,7 @@
     <div class="mh"><div><div class="mt">Record Expense</div><div class="mt-sub">US-026</div></div><button class="mx" data-close="m-exp">×</button></div>
     <div class="mb">
       <div class="fr">
-        <div class="fg" id="fg-ex-cat"><label class="fl">Category *</label><input class="fi" id="ex-cat" list="exp-cats-list" placeholder="e.g. Electricity, Fuel"><datalist id="exp-cats-list"><option>Electricity</option><option>Fuel</option><option>Labour</option><option>Maintenance</option><option>Water</option><option>Miscellaneous</option></datalist><span class="ferr">Required</span></div>
+        <div class="fg" id="fg-ex-cat"><label class="fl">Category *</label><input class="fi" id="ex-cat" list="exp-cats-list" placeholder="e.g. Electricity, Water, Gas, Diesel"><datalist id="exp-cats-list"><option>Electricity</option><option>Water</option><option>Gas</option><option>Diesel</option><option>Petrol</option><option>Labour</option><option>Maintenance</option><option>Miscellaneous</option></datalist><span class="ferr">Required</span></div>
         <div class="fg" id="fg-ex-d"><label class="fl">Date *</label><input class="fi" id="ex-date" type="date"><span class="ferr">Required</span></div>
       </div>
       <div class="fr">

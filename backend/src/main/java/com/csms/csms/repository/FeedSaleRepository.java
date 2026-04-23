@@ -11,9 +11,5 @@ import java.util.UUID;
 @Repository
 public interface FeedSaleRepository extends JpaRepository<FeedSale, UUID> {
 
-    List<FeedSale> findByFeedTypeId(UUID feedTypeId);
-
     List<FeedSale> findBySaleDateBetween(LocalDate startDate, LocalDate endDate);
-
-    List<FeedSale> findByFeedTypeIdAndSaleDateBetween(UUID feedTypeId, LocalDate startDate, LocalDate endDate);
 }

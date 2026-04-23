@@ -1,22 +1,22 @@
 package com.csms.csms.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.DynamicInsert;
+import org.hibernate.annotations.Formula;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "feed_sales")
+@Table(name = "sacks_sale")
+@DynamicInsert
 public class FeedSale {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "sale_id")
     private UUID saleId;
-
-    @Column(name = "feed_type_id", nullable = false)
-    private UUID feedTypeId;
 
     @Column(name = "sale_date", nullable = false)
     private LocalDate saleDate;
@@ -27,7 +27,7 @@ public class FeedSale {
     @Column(name = "price_per_sack", nullable = false, precision = 10, scale = 2)
     private BigDecimal pricePerSack;
 
-    @Column(name = "total_revenue", nullable = false, precision = 12, scale = 2)
+    @Formula("sacks_sold * price_per_sack")
     private BigDecimal totalRevenue;
 
     @Column(name = "buyer_name", nullable = false, length = 100)
@@ -42,21 +42,16 @@ public class FeedSale {
     // Constructors
     public FeedSale() {}
 
-    public FeedSale(UUID feedTypeId, LocalDate saleDate, Integer sacksSold, BigDecimal pricePerSack, String buyerName) {
-        this.feedTypeId = feedTypeId;
+    public FeedSale(LocalDate saleDate, Integer sacksSold, BigDecimal pricePerSack, String buyerName) {
         this.saleDate = saleDate;
         this.sacksSold = sacksSold;
         this.pricePerSack = pricePerSack;
         this.buyerName = buyerName;
-        this.totalRevenue = pricePerSack.multiply(new BigDecimal(sacksSold));
     }
 
     // Getters & Setters
     public UUID getSaleId() { return saleId; }
     public void setSaleId(UUID saleId) { this.saleId = saleId; }
-
-    public UUID getFeedTypeId() { return feedTypeId; }
-    public void setFeedTypeId(UUID feedTypeId) { this.feedTypeId = feedTypeId; }
 
     public LocalDate getSaleDate() { return saleDate; }
     public void setSaleDate(LocalDate saleDate) { this.saleDate = saleDate; }

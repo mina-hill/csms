@@ -10,6 +10,7 @@ import com.csms.csms.repository.FlockRepository;
 import com.csms.csms.repository.WeeklyWeightRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -42,11 +43,7 @@ public class DailyRecordController {
     @Autowired
     private FlockRepository flockRepository;
 
-    // Use @Qualifier to disambiguate from FlockController's FlockAuditLogRepository
-    // (both fields are named "auditLogRepository" in their respective controllers,
-    //  but Spring resolves by type — AuditLogRepository vs FlockAuditLogRepository
-    //  are different types so there is no actual conflict; the @Qualifier is
-    //  included as an explicit safety net)
+    // Unified system audit (audit_log)
     @Autowired
     @Qualifier("auditLogRepository")
     private AuditLogRepository systemAuditLog;
@@ -71,7 +68,8 @@ public class DailyRecordController {
      *
      * Pre-checks mirror the DB BEFORE INSERT trigger:
      *  - flock must be ACTIVE
-     *  - (flock_id, record_date, shift) must be unique
+     *  - exact duplicate (flock_id, record_date, shift, type) is updated
+     *    while different type values create separate rows
      * The trigger itself is the final guard; we pre-check to return clean 409s.
      */
     @PostMapping("/mortality")
@@ -93,6 +91,21 @@ public class DailyRecordController {
             return ResponseEntity.badRequest()
                     .body(new DailyRecordError("count cannot be negative."));
         }
+        if (req.getType() == null || req.getType().isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(new DailyRecordError("type is required (Hospital Mortality or Shed Mortality)."));
+        }
+        String mortalityType = req.getType().trim();
+        if (!mortalityType.equalsIgnoreCase("Hospital Mortality")
+                && !mortalityType.equalsIgnoreCase("Shed Mortality")) {
+            return ResponseEntity.badRequest()
+                    .body(new DailyRecordError("type must be Hospital Mortality or Shed Mortality."));
+        }
+        if (mortalityType.equalsIgnoreCase("hospital mortality")) {
+            mortalityType = "Hospital Mortality";
+        } else {
+            mortalityType = "Shed Mortality";
+        }
 
         var flockOpt = flockRepository.findById(req.getFlockId());
         if (flockOpt.isEmpty()) {
@@ -104,35 +117,50 @@ public class DailyRecordController {
         }
 
         Optional<DailyMortality> duplicate = mortalityRepository
-                .findByFlockIdAndRecordDateAndShift(
-                        req.getFlockId(), req.getRecordDate(), shift);
-        if (duplicate.isPresent()) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(new DailyRecordError(shift + " mortality already recorded for "
-                            + req.getRecordDate() + " on this flock."));
-        }
+                .findByFlockIdAndRecordDateAndShiftAndType(
+                        req.getFlockId(), req.getRecordDate(), shift, mortalityType);
 
-        DailyMortality record = new DailyMortality(
-                req.getFlockId(),
-                req.getRecordDate(),
-                req.getCount(),
-                shift,
-                req.getRecordedBy()
-        );
-        DailyMortality saved = mortalityRepository.save(record);
+        DailyMortality saved;
+        String action;
+        try {
+            if (duplicate.isPresent()) {
+                DailyMortality existing = duplicate.get();
+                existing.setCount(req.getCount());
+                existing.setType(mortalityType);
+                existing.setRecordedBy(req.getRecordedBy());
+                saved = mortalityRepository.save(existing);
+                action = "MORTALITY_UPDATED";
+            } else {
+                DailyMortality record = new DailyMortality(
+                        req.getFlockId(),
+                        req.getRecordDate(),
+                        req.getCount(),
+                        shift,
+                        mortalityType,
+                        req.getRecordedBy()
+                );
+                saved = mortalityRepository.save(record);
+                action = "MORTALITY_RECORDED";
+            }
+        } catch (DataIntegrityViolationException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(new DailyRecordError(
+                    "Database unique constraint still uses (flock,date,shift). Update it to include type."));
+        }
 
         systemAuditLog.save(new AuditLog(
                 req.getRecordedBy(),
-                "MORTALITY_RECORDED",
+                action,
                 "daily_mortality",
                 saved.getMortalityId(),
+                req.getFlockId(),
                 "{\"flock_id\":\"" + req.getFlockId()
                         + "\",\"date\":\"" + req.getRecordDate()
                         + "\",\"shift\":\"" + shift
+                        + "\",\"type\":\"" + mortalityType
                         + "\",\"count\":" + req.getCount() + "}"
         ));
 
-        return ResponseEntity.status(HttpStatus.CREATED).body(saved);
+        return ResponseEntity.status(duplicate.isPresent() ? HttpStatus.OK : HttpStatus.CREATED).body(saved);
     }
 
     // ── WEEKLY WEIGHT ─────────────────────────────────────────────────────────
@@ -215,6 +243,7 @@ public class DailyRecordController {
                 "WEIGHT_RECORDED",
                 "weekly_weight",
                 saved.getWeightId(),
+                req.getFlockId(),
                 "{\"flock_id\":\"" + req.getFlockId()
                         + "\",\"week_number\":" + req.getWeekNumber()
                         + ",\"avg_weight_kg\":" + req.getAvgWeightKg() + "}"
@@ -231,6 +260,7 @@ class MortalityRequest {
     private LocalDate recordDate;
     private Integer   count;
     private String    shift;
+    private String    type;
     private UUID      recordedBy;
 
     public MortalityRequest() {}
@@ -246,6 +276,9 @@ class MortalityRequest {
 
     public String    getShift()               { return shift; }
     public void      setShift(String v)       { this.shift = v; }
+
+    public String    getType()                { return type; }
+    public void      setType(String v)        { this.type = v; }
 
     public UUID      getRecordedBy()          { return recordedBy; }
     public void      setRecordedBy(UUID v)    { this.recordedBy = v; }
