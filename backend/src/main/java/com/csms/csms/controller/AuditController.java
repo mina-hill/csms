@@ -1,5 +1,6 @@
 package com.csms.csms.controller;
 
+import com.csms.csms.auth.CsmsAccessHelper;
 import com.csms.csms.entity.AuditLog;
 import com.csms.csms.repository.AuditLogRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +27,9 @@ public class AuditController {
     @Autowired
     @Qualifier("auditLogRepository")
     private AuditLogRepository auditLogRepository;
+
+    @Autowired
+    private CsmsAccessHelper accessHelper;
 
     @GetMapping
     public ResponseEntity<List<AuditLog>> getAuditLog(
@@ -59,8 +63,9 @@ public class AuditController {
 
     @PostMapping
     public ResponseEntity<AuditLog> createAuditEntry(
-            @RequestBody AuditEntryRequest req) {
-
+            @RequestBody AuditEntryRequest req,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireShedManagerOrAdminOrThrow(actorId);
         if (req.getAction() == null || req.getAction().isBlank()) {
             return ResponseEntity.badRequest().build();
         }

@@ -18,7 +18,11 @@ body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--dark);
 .brand-mark{width:36px;height:36px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:18px;}
 .brand-name{font-family:'DM Serif Display',serif;font-size:1.2rem;}
 .brand-name em{color:var(--accent);font-style:normal;}
-.user{display:flex;align-items:center;gap:8px;font-size:0.8rem;color:var(--muted);}
+.user{display:flex;align-items:center;gap:10px;font-size:0.8rem;color:var(--muted);}
+.user-block{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+#user-line{display:flex;flex-direction:column;align-items:flex-start;gap:1px;}
+.user-role{display:block;font-size:0.65rem;color:var(--accent);font-weight:600;text-transform:capitalize;}
+.nav-item-hidden{display:none !important;}
 .av{width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:0.68rem;font-weight:700;}
 
 /* LAYOUT */

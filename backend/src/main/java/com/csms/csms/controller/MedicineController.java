@@ -1,6 +1,7 @@
 package com.csms.csms.controller;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
+import com.csms.csms.auth.CsmsAccessHelper;
 import com.csms.csms.entity.Medicine;
 import com.csms.csms.entity.MedicinePurchase;
 import com.csms.csms.entity.MedicineUsage;
@@ -22,26 +23,15 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
-/**
- * Consolidated Medicine Management Controller.
- * Handles: medicine types, purchases, and usage.
- * Endpoint paths:
- * - /api/medicines         -> core medicine CRUD
- * - /api/medicine/purchases -> purchase transactions
- * - /api/medicine/usage     -> usage transactions
- */
 @RestController
 @CrossOrigin(origins = "*")
 public class MedicineController {
 
-    @Autowired
-    private MedicineRepository medicineRepository;
-    @Autowired
-    private MedicinePurchaseRepository medicinePurchaseRepository;
-    @Autowired
-    private MedicineUsageRepository medicineUsageRepository;
-    @Autowired
-    private SupplierRepository supplierRepository;
+    @Autowired private MedicineRepository medicineRepository;
+    @Autowired private MedicinePurchaseRepository medicinePurchaseRepository;
+    @Autowired private MedicineUsageRepository medicineUsageRepository;
+    @Autowired private SupplierRepository supplierRepository;
+    @Autowired private CsmsAccessHelper accessHelper;
 
     // ===== CORE MEDICINE OPERATIONS (/api/medicines) =====
 
@@ -60,7 +50,10 @@ public class MedicineController {
     }
 
     @PostMapping("/api/medicines/upsert")
-    public ResponseEntity<?> upsertMedicine(@RequestBody MedicineUpsertRequest request) {
+    public ResponseEntity<?> upsertMedicine(
+            @RequestBody MedicineUpsertRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireShedManagerOrAdminOrThrow(actorId);
         if (request.getName() == null || request.getName().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "name is required."));
         }
@@ -83,8 +76,11 @@ public class MedicineController {
     }
 
     @PatchMapping("/api/medicines/{id}/threshold")
-    public ResponseEntity<?> updateThreshold(@PathVariable UUID id, 
-            @RequestBody MedicineThresholdRequest request) {
+    public ResponseEntity<?> updateThreshold(
+            @PathVariable UUID id,
+            @RequestBody MedicineThresholdRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireShedManagerOrAdminOrThrow(actorId);
         if (request.getMinThreshold() == null || request.getMinThreshold() < 0) {
             return ResponseEntity.badRequest().body(Map.of("error", "minThreshold must be >= 0."));
         }
@@ -92,14 +88,16 @@ public class MedicineController {
         if (existing.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
-
         Medicine medicine = existing.get();
         medicine.setMinThreshold(request.getMinThreshold());
         return ResponseEntity.ok(medicineRepository.save(medicine));
     }
 
     @PatchMapping("/api/medicines/stock")
-    public ResponseEntity<?> adjustStock(@RequestBody MedicineStockAdjustRequest request) {
+    public ResponseEntity<?> adjustStock(
+            @RequestBody MedicineStockAdjustRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireShedManagerOrAdminOrThrow(actorId);
         if (request.getName() == null || request.getName().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "name is required."));
         }
@@ -113,11 +111,11 @@ public class MedicineController {
                 return ResponseEntity.badRequest()
                         .body(Map.of("error", "Cannot decrement stock for non-existing medicine."));
             }
-            medicine = new Medicine(normalizedName, 
+            medicine = new Medicine(normalizedName,
                     request.getMinThreshold() != null ? request.getMinThreshold() : 5);
             medicine.setCurrentStock(0);
         }
-        int nextStock = (medicine.getCurrentStock() == null ? 0 : medicine.getCurrentStock()) 
+        int nextStock = (medicine.getCurrentStock() == null ? 0 : medicine.getCurrentStock())
                 + request.getDelta();
         if (nextStock < 0) {
             return ResponseEntity.badRequest()
@@ -138,7 +136,7 @@ public class MedicineController {
     @PostMapping("/api/medicine/purchases")
     public ResponseEntity<?> createPurchase(@RequestBody MedicinePurchaseRequest request) {
         UUID medicineId = request.getMedicineId();
-        if (medicineId == null && request.getMedicineName() != null 
+        if (medicineId == null && request.getMedicineName() != null
                 && !request.getMedicineName().isBlank()) {
             medicineId = medicineRepository.findByName(request.getMedicineName().trim())
                     .map(Medicine::getMedicineId)
@@ -180,16 +178,13 @@ public class MedicineController {
         );
         if (request.getUnit() != null && !request.getUnit().isBlank()) {
             String unit = request.getUnit().trim();
-            if (unit.length() > 60) {
-                unit = unit.substring(0, 60);
-            }
+            if (unit.length() > 60) unit = unit.substring(0, 60);
             purchase.setUnit(unit);
         }
         purchase.setRecordedBy(request.getRecordedBy());
         try {
             medicinePurchaseRepository.save(purchase);
-            return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(Map.of("status", "recorded"));
+            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("status", "recorded"));
         } catch (DataIntegrityViolationException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
                     "error", "Could not save medicine purchase (check foreign keys and unique constraints).",
@@ -209,7 +204,6 @@ public class MedicineController {
             @RequestParam(required = false) UUID medicineId,
             @RequestParam(required = false) LocalDate startDate,
             @RequestParam(required = false) LocalDate endDate) {
-        
         if (medicineId != null && startDate != null && endDate != null) {
             return ResponseEntity.ok(medicinePurchaseRepository
                     .findByMedicineIdAndPurchaseDateBetween(medicineId, startDate, endDate));
@@ -273,7 +267,6 @@ public class MedicineController {
             @RequestParam(required = false) UUID flockId,
             @RequestParam(required = false) LocalDate startDate,
             @RequestParam(required = false) LocalDate endDate) {
-        
         if (flockId != null && startDate != null && endDate != null) {
             return ResponseEntity.ok(medicineUsageRepository
                     .findByFlockIdAndUsageDateBetween(flockId, startDate, endDate));

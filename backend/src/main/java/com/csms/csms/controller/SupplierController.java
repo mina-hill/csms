@@ -1,5 +1,6 @@
 package com.csms.csms.controller;
 
+import com.csms.csms.auth.CsmsAccessHelper;
 import com.csms.csms.entity.Supplier;
 import com.csms.csms.entity.SupplierType;
 import com.csms.csms.repository.SupplierRepository;
@@ -19,6 +20,9 @@ public class SupplierController {
 
     @Autowired
     private SupplierRepository supplierRepository;
+
+    @Autowired
+    private CsmsAccessHelper accessHelper;
 
     /**
      * GET /api/suppliers - Get all suppliersgit
@@ -83,7 +87,10 @@ public class SupplierController {
      * Request body: { "name": "Acme Feeds", "phone": "123-456", "address": "123 Farm Rd", "supplierType": "FEED" }
      */
     @PostMapping
-    public ResponseEntity<Supplier> createSupplier(@RequestBody SupplierRequest request) {
+    public ResponseEntity<Supplier> createSupplier(
+            @RequestBody SupplierRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireFinancialOrThrow(actorId);
         // Validate required fields
         if (request.getName() == null || request.getName().isBlank()) {
             return ResponseEntity.badRequest().build();
@@ -115,7 +122,11 @@ public class SupplierController {
      * Request body: { "name": "Updated Name", "phone": "999-888", "address": "New Address", "supplierType": "MEDICINE", "isActive": true }
      */
     @PutMapping("/{id}")
-    public ResponseEntity<Supplier> updateSupplier(@PathVariable UUID id, @RequestBody SupplierRequest request) {
+    public ResponseEntity<Supplier> updateSupplier(
+            @PathVariable UUID id,
+            @RequestBody SupplierRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireFinancialOrThrow(actorId);
         Optional<Supplier> existingSupplier = supplierRepository.findById(id);
         
         if (!existingSupplier.isPresent()) {
@@ -155,7 +166,10 @@ public class SupplierController {
      * Note: We mark as inactive instead of hard delete to preserve historical data
      */
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteSupplier(@PathVariable UUID id) {
+    public ResponseEntity<Void> deleteSupplier(
+            @PathVariable UUID id,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireFinancialOrThrow(actorId);
         Optional<Supplier> supplier = supplierRepository.findById(id);
         
         if (!supplier.isPresent()) {

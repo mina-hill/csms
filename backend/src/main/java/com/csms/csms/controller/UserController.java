@@ -1,5 +1,7 @@
 package com.csms.csms.controller;
 
+import com.csms.csms.auth.CsmsAccessHelper;
+import com.csms.csms.auth.EmailLoginNormalizer;
 import com.csms.csms.entity.User;
 import com.csms.csms.entity.UserRole;
 import com.csms.csms.repository.UserRepository;
@@ -20,12 +22,17 @@ public class UserController {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private CsmsAccessHelper accessHelper;
+
     /**
      * GET /api/users - Get all users
      * Called by: HTML dashboard to show user list
      */
     @GetMapping
-    public ResponseEntity<List<User>> getAllUsers() {
+    public ResponseEntity<List<User>> getAllUsers(
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireShedManagerOrAdminOrThrow(actorId);
         List<User> users = userRepository.findAll();
         return ResponseEntity.ok(users);
     }
@@ -35,7 +42,10 @@ public class UserController {
      * Called by: HTML to get user details
      */
     @GetMapping("/{id}")
-    public ResponseEntity<User> getUserById(@PathVariable UUID id) {
+    public ResponseEntity<User> getUserById(
+            @PathVariable UUID id,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireShedManagerOrAdminOrThrow(actorId);
         Optional<User> user = userRepository.findById(id);
         if (user.isPresent()) {
             return ResponseEntity.ok(user.get());
@@ -50,7 +60,17 @@ public class UserController {
      */
     @GetMapping("/search/email")
     public ResponseEntity<User> getUserByEmail(@RequestParam String email) {
-        Optional<User> user = userRepository.findByEmail(email);
+        if (email == null || email.isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+        String normalized = EmailLoginNormalizer.normalize(email);
+        Optional<User> user = userRepository.findByEmailForLogin(normalized);
+        if (user.isEmpty()) {
+            user = userRepository.findByEmailIgnoreCase(normalized);
+        }
+        if (user.isEmpty()) {
+            user = userRepository.findByEmail(normalized);
+        }
         if (user.isPresent()) {
             return ResponseEntity.ok(user.get());
         }
@@ -63,7 +83,10 @@ public class UserController {
      * Request body: { "username": "john_doe", "email": "john@example.com", "role": "MANAGER" }
      */
     @PostMapping
-    public ResponseEntity<User> createUser(@RequestBody UserRequest request) {
+    public ResponseEntity<User> createUser(
+            @RequestBody UserRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireShedManagerOrAdminOrThrow(actorId);
         // Check if email already exists
         if (userRepository.existsByEmail(request.getEmail())) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
@@ -79,7 +102,11 @@ public class UserController {
      * Called by: HTML when user clicks "Edit" button
      */
     @PutMapping("/{id}")
-    public ResponseEntity<User> updateUser(@PathVariable UUID id, @RequestBody UserRequest request) {
+    public ResponseEntity<User> updateUser(
+            @PathVariable UUID id,
+            @RequestBody UserRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireShedManagerOrAdminOrThrow(actorId);
         Optional<User> existingUser = userRepository.findById(id);
         if (existingUser.isPresent()) {
             User user = existingUser.get();
@@ -98,7 +125,10 @@ public class UserController {
      * Called by: HTML when user clicks "Delete" button
      */
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteUser(@PathVariable UUID id) {
+    public ResponseEntity<Void> deleteUser(
+            @PathVariable UUID id,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireShedManagerOrAdminOrThrow(actorId);
         if (userRepository.existsById(id)) {
             userRepository.deleteById(id);
             return ResponseEntity.noContent().build();
@@ -110,7 +140,10 @@ public class UserController {
      * GET /api/users/role/ADMIN - Get all users with specific role
      */
     @GetMapping("/role/{role}")
-    public ResponseEntity<List<User>> getUsersByRole(@PathVariable UserRole role) {
+    public ResponseEntity<List<User>> getUsersByRole(
+            @PathVariable UserRole role,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireShedManagerOrAdminOrThrow(actorId);
         List<User> users = userRepository.findByRoleAndIsActiveTrue(role);
         return ResponseEntity.ok(users);
     }

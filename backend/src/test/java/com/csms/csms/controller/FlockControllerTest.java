@@ -1,9 +1,10 @@
 package com.csms.csms.controller;
 
+import com.csms.csms.auth.CsmsAccessHelper;
 import com.csms.csms.entity.Flock;
-import com.csms.csms.entity.FlockAuditLog;
+import com.csms.csms.entity.AuditLog;
 import com.csms.csms.entity.FlockStatus;
-import com.csms.csms.repository.FlockAuditLogRepository;
+import com.csms.csms.repository.AuditLogRepository;
 import com.csms.csms.repository.FlockRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -40,12 +41,17 @@ import static org.mockito.Mockito.*;
 @DisplayName("FlockController - updateFlock() White-Box Tests")
 class FlockControllerTest {
 
+    private static final String TEST_ACTOR = "00000000-0000-0000-0000-000000000001";
+
     // Mock the repositories (don't use real database during tests)
     @Mock
     private FlockRepository flockRepository;
 
     @Mock
-    private FlockAuditLogRepository auditLogRepository;
+    private AuditLogRepository auditLogRepository;
+
+    @Mock
+    private CsmsAccessHelper accessHelper;
 
     // Inject mocks into the controller
     @InjectMocks
@@ -62,6 +68,7 @@ class FlockControllerTest {
      */
     @BeforeEach
     void setUp() {
+        doNothing().when(accessHelper).requireShedManagerOrAdminOrThrow(any());
         flockId = UUID.randomUUID();
         
         activeFlock = new Flock();
@@ -96,7 +103,7 @@ class FlockControllerTest {
         updateRequest.setCurrentQty(600);
 
         // Act: Call the method
-        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest);
+        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest, TEST_ACTOR);
 
         // Assert: Check response
         assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
@@ -106,7 +113,7 @@ class FlockControllerTest {
         verify(flockRepository, times(1)).findById(flockId);
         
         // Verify: Ensure NO audit log was created
-        verify(auditLogRepository, never()).save(any(FlockAuditLog.class));
+        verify(auditLogRepository, never()).save(any(AuditLog.class));
     }
 
     // ========== BRANCH 2: FLOCK IS CLOSED ==========
@@ -131,7 +138,7 @@ class FlockControllerTest {
         updateRequest.setCurrentQty(400);
 
         // Act
-        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest);
+        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest, TEST_ACTOR);
 
         // Assert
         assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
@@ -141,7 +148,7 @@ class FlockControllerTest {
         // Verify: Repository was called but NO save occurred (no update)
         verify(flockRepository, times(1)).findById(flockId);
         verify(flockRepository, never()).save(any(Flock.class));
-        verify(auditLogRepository, never()).save(any(FlockAuditLog.class));
+        verify(auditLogRepository, never()).save(any(AuditLog.class));
     }
 
     // ========== BRANCH 3: UPDATE BREED ONLY ==========
@@ -166,7 +173,7 @@ class FlockControllerTest {
         updateRequest.setUpdatedBy(UUID.randomUUID());
 
         // Act
-        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest);
+        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest, TEST_ACTOR);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -177,7 +184,7 @@ class FlockControllerTest {
         verify(flockRepository, times(1)).save(any(Flock.class));
         
         // Verify: audit log was created
-        verify(auditLogRepository, times(1)).save(any(FlockAuditLog.class));
+        verify(auditLogRepository, times(1)).save(any(AuditLog.class));
     }
 
     // ========== BRANCH 4: UPDATE CURRENT_QTY ONLY ==========
@@ -202,7 +209,7 @@ class FlockControllerTest {
         updateRequest.setUpdatedBy(UUID.randomUUID());
 
         // Act
-        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest);
+        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest, TEST_ACTOR);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -211,7 +218,7 @@ class FlockControllerTest {
         
         // Verify: save() was called
         verify(flockRepository, times(1)).save(any(Flock.class));
-        verify(auditLogRepository, times(1)).save(any(FlockAuditLog.class));
+        verify(auditLogRepository, times(1)).save(any(AuditLog.class));
     }
 
     // ========== BRANCH 5: UPDATE NOTES ONLY ==========
@@ -236,14 +243,14 @@ class FlockControllerTest {
         updateRequest.setUpdatedBy(UUID.randomUUID());
 
         // Act
-        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest);
+        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest, TEST_ACTOR);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
         
         // Verify: save() was called
         verify(flockRepository, times(1)).save(any(Flock.class));
-        verify(auditLogRepository, times(1)).save(any(FlockAuditLog.class));
+        verify(auditLogRepository, times(1)).save(any(AuditLog.class));
     }
 
     // ========== BRANCH 6: UPDATE ALL FIELDS ==========
@@ -268,7 +275,7 @@ class FlockControllerTest {
         updateRequest.setUpdatedBy(UUID.randomUUID());
 
         // Act
-        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest);
+        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest, TEST_ACTOR);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -277,7 +284,7 @@ class FlockControllerTest {
         verify(flockRepository, times(1)).save(any(Flock.class));
         
         // Verify: audit log created with both old and new values
-        verify(auditLogRepository, times(1)).save(any(FlockAuditLog.class));
+        verify(auditLogRepository, times(1)).save(any(AuditLog.class));
     }
 
     // ========== BRANCH 7: ALL FIELDS NULL (EDGE CASE) ==========
@@ -305,7 +312,7 @@ class FlockControllerTest {
         updateRequest.setUpdatedBy(UUID.randomUUID());
 
         // Act
-        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest);
+        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest, TEST_ACTOR);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -336,7 +343,7 @@ class FlockControllerTest {
         updateRequest.setUpdatedBy(UUID.randomUUID());
 
         // Act
-        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest);
+        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest, TEST_ACTOR);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -360,7 +367,7 @@ class FlockControllerTest {
         updateRequest.setUpdatedBy(UUID.randomUUID());
 
         // Act
-        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest);
+        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest, TEST_ACTOR);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -384,7 +391,7 @@ class FlockControllerTest {
         updateRequest.setUpdatedBy(UUID.randomUUID());
 
         // Act
-        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest);
+        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest, TEST_ACTOR);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -399,8 +406,11 @@ class FlockControllerTest {
 @DisplayName("White-Box: closeFlock() + generateNextFlockCode()")
 class FlockControllerCloseTest {
 
+    private static final String TEST_ACTOR = "00000000-0000-0000-0000-000000000001";
+
     @Mock private FlockRepository flockRepository;
-    @Mock private FlockAuditLogRepository auditLogRepository;
+    @Mock private AuditLogRepository auditLogRepository;
+    @Mock private CsmsAccessHelper accessHelper;
     @InjectMocks private FlockController flockController;
 
     private UUID flockId;
@@ -409,6 +419,7 @@ class FlockControllerCloseTest {
 
     @BeforeEach
     void setUp() {
+        doNothing().when(accessHelper).requireShedManagerOrAdminOrThrow(any());
         flockId = UUID.randomUUID();
 
         activeFlock = new Flock();
@@ -429,7 +440,7 @@ class FlockControllerCloseTest {
     void testCloseFlock_NotFound() {
         when(flockRepository.findById(flockId)).thenReturn(Optional.empty());
 
-        ResponseEntity<?> response = flockController.closeFlock(flockId, closeRequest);
+        ResponseEntity<?> response = flockController.closeFlock(flockId, closeRequest, TEST_ACTOR);
 
         assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
         verify(flockRepository, never()).save(any());
@@ -446,7 +457,7 @@ class FlockControllerCloseTest {
         activeFlock.setCloseDate(LocalDate.of(2024, 1, 10));
         when(flockRepository.findById(flockId)).thenReturn(Optional.of(activeFlock));
 
-        ResponseEntity<?> response = flockController.closeFlock(flockId, closeRequest);
+        ResponseEntity<?> response = flockController.closeFlock(flockId, closeRequest, TEST_ACTOR);
 
         assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
         assertNotNull(response.getBody());
@@ -467,13 +478,13 @@ class FlockControllerCloseTest {
         when(flockRepository.findById(flockId)).thenReturn(Optional.of(activeFlock));
         when(flockRepository.save(any(Flock.class))).thenReturn(activeFlock);
 
-        ResponseEntity<?> response = flockController.closeFlock(flockId, closeRequest);
+        ResponseEntity<?> response = flockController.closeFlock(flockId, closeRequest, TEST_ACTOR);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals(FlockStatus.CLOSED, activeFlock.getStatus());
         assertEquals(providedDate, activeFlock.getCloseDate());
         verify(flockRepository, times(1)).save(activeFlock);
-        verify(auditLogRepository, times(1)).save(any(FlockAuditLog.class));
+        verify(auditLogRepository, times(1)).save(any(AuditLog.class));
     }
 
     // ---------------------------------------------------------------
@@ -488,7 +499,7 @@ class FlockControllerCloseTest {
         when(flockRepository.save(any(Flock.class))).thenReturn(activeFlock);
 
         LocalDate before = LocalDate.now();
-        ResponseEntity<?> response = flockController.closeFlock(flockId, closeRequest);
+        ResponseEntity<?> response = flockController.closeFlock(flockId, closeRequest, TEST_ACTOR);
         LocalDate after = LocalDate.now();
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -497,7 +508,7 @@ class FlockControllerCloseTest {
         assertFalse(activeFlock.getCloseDate().isBefore(before));
         assertFalse(activeFlock.getCloseDate().isAfter(after));
         verify(flockRepository, times(1)).save(activeFlock);
-        verify(auditLogRepository, times(1)).save(any(FlockAuditLog.class));
+        verify(auditLogRepository, times(1)).save(any(AuditLog.class));
     }
 
     // ---------------------------------------------------------------
@@ -523,7 +534,7 @@ class FlockControllerCloseTest {
         savedFlock.setStatus(FlockStatus.ACTIVE);
         when(flockRepository.save(any(Flock.class))).thenReturn(savedFlock);
 
-        ResponseEntity<?> response = flockController.registerFlock(registerReq);
+        ResponseEntity<?> response = flockController.registerFlock(registerReq, TEST_ACTOR);
 
         assertEquals(HttpStatus.CREATED, response.getStatusCode());
         // Loop ran once: existsByFlockCode called exactly once for FLK-001
@@ -552,7 +563,7 @@ class FlockControllerCloseTest {
         savedFlock.setStatus(FlockStatus.ACTIVE);
         when(flockRepository.save(any(Flock.class))).thenReturn(savedFlock);
 
-        ResponseEntity<?> response = flockController.registerFlock(registerReq);
+        ResponseEntity<?> response = flockController.registerFlock(registerReq, TEST_ACTOR);
 
         assertEquals(HttpStatus.CREATED, response.getStatusCode());
         // Verify loop ran 3 times before finding a free code
