@@ -65,7 +65,6 @@ public class FlockController {
             @Valid @RequestBody FlockRequest req,
             @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
         accessHelper.requireShedManagerOrAdminOrThrow(actorId);
-    public ResponseEntity<?> registerFlock(@Valid @RequestBody FlockRequest req) {
         String code = generateNextFlockCode();
 
         Flock flock = new Flock(

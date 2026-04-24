@@ -1,8 +1,22 @@
 ﻿PROJECT STRUCTURE
 =================
 
+WORKSPACE ROOT
+--------------
+csms
+    ├── .git
+    ├── .gitignore
+    ├── .idea
+    ├── .vscode
+    ├── backend
+    ├── frontend
+    ├── csms-module-det.md
+    ├── PROJECT_STRUCTURE.md
+    ├── PROJECT_STRUCTURE.txt
+    └── test-plan-plan.md
+
 BACKEND TREE (excluding target)
-------------------------------
+-------------------------------
 backend
     ├── .gitattributes
     ├── .gitignore
@@ -27,23 +41,72 @@ backend
         │   │   └── com
         │   │       └── csms
         │   │           └── csms
-        │   │               ├── controller
-        │   │               │   ├── PayrollController.java
-        │   │               │   ├── SupplierController.java
-        │   │               │   └── UserController.java
         │   │               ├── CsmsApplication.java
+        │   │               ├── controller
+        │   │               │   ├── AuditController.java
+        │   │               │   ├── BradaController.java
+        │   │               │   ├── DailyRecordController.java
+        │   │               │   ├── ExpenseController.java
+        │   │               │   ├── FeedController.java
+        │   │               │   ├── FeedTypeController.java
+        │   │               │   ├── FlockController.java
+        │   │               │   ├── MedController.java
+        │   │               │   ├── MedicineController.java
+        │   │               │   ├── OtherSaleController.java
+        │   │               │   ├── PayrollController.java
+        │   │               │   ├── SalesController.java
+        │   │               │   ├── SupplierController.java
+        │   │               │   ├── UserController.java
+        │   │               │   ├── WeeklySummaryController.java
+        │   │               │   └── WorkerController.java
         │   │               ├── entity
+        │   │               │   ├── AuditLog.java
+        │   │               │   ├── BradaPurchase.java
+        │   │               │   ├── DailyMortality.java
+        │   │               │   ├── Expense.java
         │   │               │   ├── ExpenseCategory.java
+        │   │               │   ├── FeedPurchase.java
+        │   │               │   ├── FeedSale.java
+        │   │               │   ├── FeedType.java
+        │   │               │   ├── FeedUsage.java
+        │   │               │   ├── Flock.java
+        │   │               │   ├── FlockAuditLog.java
+        │   │               │   ├── FlockSale.java
         │   │               │   ├── FlockStatus.java
+        │   │               │   ├── Medicine.java
+        │   │               │   ├── MedicinePurchase.java
+        │   │               │   ├── MedicineUsage.java
+        │   │               │   ├── OtherSale.java
         │   │               │   ├── OtherSaleCategory.java
+        │   │               │   ├── SalaryPayment.java
         │   │               │   ├── Supplier.java
         │   │               │   ├── SupplierType.java
         │   │               │   ├── User.java
         │   │               │   ├── UserRole.java
+        │   │               │   ├── WeeklySummary.java
+        │   │               │   ├── WeeklyWeight.java
         │   │               │   └── Worker.java
         │   │               └── repository
+        │   │                   ├── AuditLogRepository.java
+        │   │                   ├── BradaPurchaseRepository.java
+        │   │                   ├── DailyMortalityRepository.java
+        │   │                   ├── ExpenseRepository.java
+        │   │                   ├── FeedPurchaseRepository.java
+        │   │                   ├── FeedSaleRepository.java
+        │   │                   ├── FeedTypeRepository.java
+        │   │                   ├── FeedUsageRepository.java
+        │   │                   ├── FlockAuditLogRepository.java
+        │   │                   ├── FlockRepository.java
+        │   │                   ├── FlockSaleRepository.java
+        │   │                   ├── MedicinePurchaseRepository.java
+        │   │                   ├── MedicineRepository.java
+        │   │                   ├── MedicineUsageRepository.java
+        │   │                   ├── OtherSaleRepository.java
+        │   │                   ├── SalaryPaymentRepository.java
         │   │                   ├── SupplierRepository.java
         │   │                   ├── UserRepository.java
+        │   │                   ├── WeeklySummaryRepository.java
+        │   │                   ├── WeeklyWeightRepository.java
         │   │                   └── WorkerRepository.java
         │   └── resources
         │       ├── application.properties
@@ -54,37 +117,38 @@ backend
                 └── com
                     └── csms
                         └── csms
+                            ├── controller
                             └── CsmsApplicationTests.java
 
 FRONTEND TREE (excluding node_modules)
--------------------------------------
+--------------------------------------
 frontend
     ├── .gitignore
     ├── eslint.config.js
     ├── index.html
-    ├── package.json
     ├── package-lock.json
+    ├── package.json
+    ├── README.md
+    ├── vite.config.js
     ├── public
     │   ├── favicon.svg
     │   └── icons.svg
-    ├── README.md
     ├── scripts
     │   └── extract-legacy.mjs
-    ├── src
-    │   ├── App.css
-    │   ├── App.jsx
-    │   ├── assets
-    │   │   ├── hero.png
-    │   │   ├── react.svg
-    │   │   └── vite.svg
-    │   ├── index.css
-    │   ├── legacy
-    │   │   ├── legacy.css
-    │   │   ├── legacy-body.html
-    │   │   └── legacy-script.js
-    │   ├── LegacyShell.jsx
-    │   └── main.jsx
-    └── vite.config.js
+    └── src
+        ├── App.css
+        ├── App.jsx
+        ├── index.css
+        ├── LegacyShell.jsx
+        ├── main.jsx
+        ├── assets
+        │   ├── hero.png
+        │   ├── react.svg
+        │   └── vite.svg
+        └── legacy
+            ├── legacy-body.html
+            ├── legacy-script.js
+            └── legacy.css
 
 IMMEDIATE CHILDREN OF EXCLUDED DIRECTORIES
 ------------------------------------------
@@ -93,10 +157,12 @@ backend\target:
   generated-sources
   generated-test-sources
   maven-status
+  surefire-reports
   test-classes
 
 frontend\node_modules:
   .bin
+  .package-lock.json
   .vite
   .vite-temp
   @babel
@@ -217,5 +283,4 @@ frontend\node_modules:
   yocto-queue
   zod
   zod-validation-error
-  .package-lock.json
 

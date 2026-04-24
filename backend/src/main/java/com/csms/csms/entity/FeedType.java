@@ -42,12 +42,12 @@ public class FeedType {
     }
 
     // Getters & Setters
-    @JsonProperty("id")
+    @JsonProperty("feedTypeId")
     public UUID getFeedTypeId() {
         return feedTypeId;
     }
 
-    @JsonProperty("id")
+    @JsonProperty("feedTypeId")
     public void setFeedTypeId(UUID feedTypeId) {
         this.feedTypeId = feedTypeId;
     }

@@ -71,9 +71,9 @@ public class Flock {
         this.status      = FlockStatus.ACTIVE;
     }
 
-    @JsonProperty("id")
+    @JsonProperty("flockId")
     public UUID getFlockId()                         { return flockId; }
-    @JsonProperty("id")
+    @JsonProperty("flockId")
     public void setFlockId(UUID v)                   { this.flockId = v; }
 
     public String getFlockCode()                     { return flockCode; }

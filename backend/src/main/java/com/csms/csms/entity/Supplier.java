@@ -54,12 +54,12 @@ public class Supplier {
     }
 
     // Getters & Setters
-    @JsonProperty("id")
+    @JsonProperty("supplierId")
     public UUID getSupplierId() {
         return supplierId;
     }
 
-    @JsonProperty("id")
+    @JsonProperty("supplierId")
     public void setSupplierId(UUID supplierId) {
         this.supplierId = supplierId;
     }

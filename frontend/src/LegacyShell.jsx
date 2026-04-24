@@ -19,8 +19,9 @@ export default function LegacyShell() {
 
   useEffect(() => {
     ensureLegacyScriptLoaded()
-    import('html2pdf.js')
-      .then((mod) => {
+//     import('html2pdf.js')
+//       .then((mod) => {
+    import("html2pdf.js/dist/html2pdf.min.js").then((mod) => {
         window.__html2pdf = mod.default
       })
       .catch(() => {
