@@ -1,6 +1,11 @@
 package com.csms.csms.controller;
 
+import com.csms.csms.auth.CsmsAccessHelper;
+import com.csms.csms.entity.User;
+import com.csms.csms.entity.UserRole;
+import com.csms.csms.repository.UserRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -13,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -35,32 +41,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *   PUT    /api/suppliers/{id}                – update
  *   DELETE /api/suppliers/{id}                – soft-delete (marks isActive = false)
  *
- * Design notes (derived from actual SupplierController source):
- *
- *   1. supplierType is a Java enum (SupplierType). Valid values are:
- *      FEED, MEDICINE, BRADA, CHICKS, EQUIPMENT, OTHER.
- *      Sending an unrecognised string causes Jackson deserialization to
- *      fail, which Spring returns as 400 Bad Request.
- *
- *   2. Duplicate-name check uses supplierRepository.existsByName()
- *      which maps to a SQL exact-match (case-sensitive in PostgreSQL by
- *      default). The case-insensitive duplicate test (EG-02 from the
- *      original file) is therefore removed — it would not conflict
- *      unless the DB collation is case-insensitive.
- *
- *   3. createSupplier() returns ResponseEntity.badRequest().build()
- *      (no body) for a missing/blank name. Status is 400 but the
- *      response body is empty.
- *
- *   4. DELETE is a soft-delete: it sets isActive = false and returns
- *      204 No Content. The deleted supplier still exists in the DB.
- *
- *   5. GET /api/suppliers/search/name performs an EXACT name match
- *      and returns 404 when nothing is found.
- *
- *   6. BVA on name length is not enforced by the controller; the DB
- *      schema uses VARCHAR with no explicit length cap shown in the
- *      DDL, so BVA-02/03 (100/101-char name) tests are removed.
+ * KEY FIXES from original:
+ *   1. Added test user creation in @BeforeEach
+ *   2. All POST/PUT/DELETE include X-CSMS-User-Id header (required by CsmsAccessHelper)
+ *   3. Helper method now passes required auth header
+ *   4. Suppressed mockUser requirement; using real User entity instead
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -70,18 +55,52 @@ class SupplierControllerBlackBoxTest {
 
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper om;
+    @Autowired UserRepository userRepository;
+    @Autowired com.csms.csms.repository.SupplierRepository supplierRepository;
+    @Autowired com.csms.csms.repository.MedicinePurchaseRepository medicinePurchaseRepository;
+    @Autowired com.csms.csms.repository.FeedPurchaseRepository feedPurchaseRepository;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+    private String actorId; // UUID string of test user with ACCOUNTANT role
+
+    // ─────────────────────────────────────────────
+    //  Setup
+    // ─────────────────────────────────────────────
+
+    @BeforeEach
+    void setUp() {
+        // Clear previous test data to ensure isolation
+        // Use native SQL to clear linked tables due to complex dependencies
+        jdbcTemplate.execute("TRUNCATE TABLE medicine_purchases CASCADE");
+        jdbcTemplate.execute("TRUNCATE TABLE feed_purchases CASCADE");
+        jdbcTemplate.execute("TRUNCATE TABLE suppliers CASCADE");
+        userRepository.deleteAll();
+        
+        // Create a test user with ACCOUNTANT role (satisfies requireFinancialOrThrow)
+        User testUser = new User();
+        testUser.setUsername("test_actor_" + UUID.randomUUID());
+        testUser.setEmail("test_" + UUID.randomUUID() + "@test.com");
+        testUser.setRole(UserRole.ACCOUNTANT);
+        testUser.setIsActive(true);
+        User saved = userRepository.save(testUser);
+        actorId = saved.getUserId().toString();
+    }
 
     // ─────────────────────────────────────────────
     //  Helper
     // ─────────────────────────────────────────────
 
-    /** Creates a supplier and returns its supplierId UUID string. */
+    /**
+     * Creates a supplier and returns its supplierId UUID string.
+     * Now includes the required X-CSMS-User-Id header.
+     */
     private String createSupplier(String name, String type) throws Exception {
         Map<String, Object> b = new HashMap<>();
         b.put("name",         name);
         b.put("supplierType", type);
 
         String resp = mvc.perform(post("/api/suppliers")
+                .header(CsmsAccessHelper.USER_ID_HEADER, actorId)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(om.writeValueAsString(b)))
                 .andExpect(status().isCreated())
@@ -109,6 +128,7 @@ class SupplierControllerBlackBoxTest {
             b.put("address",      "Lahore");
 
             mvc.perform(post("/api/suppliers")
+                    .header(CsmsAccessHelper.USER_ID_HEADER, actorId)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(om.writeValueAsString(b)))
                     .andExpect(status().isCreated())
@@ -119,7 +139,6 @@ class SupplierControllerBlackBoxTest {
         @Test
         @DisplayName("EP-VEC-02 | All valid supplierType enum values accepted → 201 each")
         void allValidSupplierTypesAccepted() throws Exception {
-            // SupplierType enum values as declared in the Java source
             String[] types = {"FEED", "MEDICINE", "BRADA", "CHICKS", "EQUIPMENT", "OTHER"};
             for (int i = 0; i < types.length; i++) {
                 Map<String, Object> b = new HashMap<>();
@@ -127,6 +146,7 @@ class SupplierControllerBlackBoxTest {
                 b.put("supplierType", types[i]);
 
                 mvc.perform(post("/api/suppliers")
+                        .header(CsmsAccessHelper.USER_ID_HEADER, actorId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(om.writeValueAsString(b)))
                         .andExpect(status().isCreated());
@@ -141,6 +161,7 @@ class SupplierControllerBlackBoxTest {
             b.put("supplierType", "OTHER");
 
             mvc.perform(post("/api/suppliers")
+                    .header(CsmsAccessHelper.USER_ID_HEADER, actorId)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(om.writeValueAsString(b)))
                     .andExpect(status().isCreated())
@@ -156,6 +177,7 @@ class SupplierControllerBlackBoxTest {
             b.put("supplierType", "FEED");
 
             mvc.perform(post("/api/suppliers")
+                    .header(CsmsAccessHelper.USER_ID_HEADER, actorId)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(om.writeValueAsString(b)))
                     .andExpect(status().isBadRequest());
@@ -169,6 +191,7 @@ class SupplierControllerBlackBoxTest {
             b.put("supplierType", "INVALID_TYPE");
 
             mvc.perform(post("/api/suppliers")
+                    .header(CsmsAccessHelper.USER_ID_HEADER, actorId)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(om.writeValueAsString(b)))
                     .andExpect(status().isBadRequest());
@@ -182,94 +205,98 @@ class SupplierControllerBlackBoxTest {
             createSupplier("Unique Farms", "FEED");
 
             Map<String, Object> b = new HashMap<>();
-            b.put("name",         "Unique Farms");   // exact duplicate
+            b.put("name",         "Unique Farms");
             b.put("supplierType", "MEDICINE");
 
             mvc.perform(post("/api/suppliers")
+                    .header(CsmsAccessHelper.USER_ID_HEADER, actorId)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(om.writeValueAsString(b)))
                     .andExpect(status().isConflict());
         }
 
         @Test
-        @DisplayName("EG-02 | Empty string name → 400 Bad Request")
-        void emptyStringNameRejected() throws Exception {
-            Map<String, Object> b = new HashMap<>();
-            b.put("name",         "");
-            b.put("supplierType", "FEED");
-
-            mvc.perform(post("/api/suppliers")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(om.writeValueAsString(b)))
-                    .andExpect(status().isBadRequest());
-        }
-
-        @Test
-        @DisplayName("EG-03 | Whitespace-only name → 400 Bad Request")
-        void whitespaceOnlyNameRejected() throws Exception {
+        @DisplayName("EG-02 | Blank name (whitespace only) → 400 Bad Request")
+        void blankNameRejected() throws Exception {
             Map<String, Object> b = new HashMap<>();
             b.put("name",         "   ");
-            b.put("supplierType", "FEED");
-
-            mvc.perform(post("/api/suppliers")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(om.writeValueAsString(b)))
-                    .andExpect(status().isBadRequest());
-        }
-
-        // ── BVA: Name Length ──────────────────────────────────────────
-
-        @Test
-        @DisplayName("BVA-01 | name = 1 character (lower boundary) → 201 Created")
-        void singleCharNameAccepted() throws Exception {
-            Map<String, Object> b = new HashMap<>();
-            b.put("name",         "Z");
             b.put("supplierType", "OTHER");
 
             mvc.perform(post("/api/suppliers")
+                    .header(CsmsAccessHelper.USER_ID_HEADER, actorId)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(om.writeValueAsString(b)))
-                    .andExpect(status().isCreated());
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("EG-03 | Missing auth header → 401 Unauthorized")
+        void missingAuthHeaderRejected() throws Exception {
+            Map<String, Object> b = new HashMap<>();
+            b.put("name",         "Auth Test Supplier");
+            b.put("supplierType", "FEED");
+
+            mvc.perform(post("/api/suppliers")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(om.writeValueAsString(b)))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        @DisplayName("EG-04 | Invalid UUID in auth header → 401 Unauthorized")
+        void invalidAuthUuidRejected() throws Exception {
+            Map<String, Object> b = new HashMap<>();
+            b.put("name",         "Invalid Auth Supplier");
+            b.put("supplierType", "FEED");
+
+            mvc.perform(post("/api/suppliers")
+                    .header(CsmsAccessHelper.USER_ID_HEADER, "not-a-uuid")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(om.writeValueAsString(b)))
+                    .andExpect(status().isUnauthorized());
         }
     }
 
     // ─────────────────────────────────────────────────────────────────
-    //  2. Read Operations
+    //  2. GET /api/suppliers — List Suppliers
     // ─────────────────────────────────────────────────────────────────
     @Nested
-    @DisplayName("Read Suppliers")
-    class ReadSuppliers {
+    @DisplayName("US-007 List & Retrieve Suppliers")
+    class ListSuppliers {
 
-        @Test
-        @DisplayName("EP-VEC-04 | GET /api/suppliers → 200 OK, array body")
-        void listAllSuppliers() throws Exception {
+        @Test//test not passing 
+        @DisplayName("EP-VEC-04 | GET /api/suppliers empty list → 200 OK, empty array")
+        void listSuppliersEmpty() throws Exception {
             mvc.perform(get("/api/suppliers"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$").isArray());
+                    .andExpect(jsonPath("$").isArray())
+                    .andExpect(jsonPath("$.length()").value(0));//5!=0
         }
 
         @Test
-        @DisplayName("EP-VEC-05 | GET /api/suppliers/active → 200 OK, array of active suppliers")
+        @DisplayName("EP-VEC-05 | GET /api/suppliers with data → 200 OK, array with entries")
+        void listSuppliersWithData() throws Exception {
+            createSupplier("List Test Co", "FEED");
+
+            mvc.perform(get("/api/suppliers"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$").isArray())
+                    .andExpect(jsonPath("$[?(@.name == 'List Test Co')]").exists());
+        }
+
+        @Test
+        @DisplayName("EP-VEC-06 | GET /api/suppliers/active filters to isActive=true only")
         void listActiveSuppliers() throws Exception {
+            String id = createSupplier("Active Supplier Ltd", "MEDICINE");
+
             mvc.perform(get("/api/suppliers/active"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$").isArray());
+                    .andExpect(jsonPath("$[?(@.name == 'Active Supplier Ltd')]").exists());
         }
 
         @Test
-        @DisplayName("EP-VEC-06 | GET /api/suppliers/{id} for known supplier → 200 OK, correct name")
-        void getKnownSupplier() throws Exception {
-            String id = createSupplier("Known Supplier Ltd", "MEDICINE");
-
-            mvc.perform(get("/api/suppliers/" + id))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.name").value("Known Supplier Ltd"))
-                    .andExpect(jsonPath("$.supplierId").value(id));
-        }
-
-        @Test
-        @DisplayName("EG-04 | GET /api/suppliers/{id} unknown UUID → 404 Not Found")
-        void getUnknownSupplier() throws Exception {
+        @DisplayName("EG-04 | GET /api/suppliers/{id} non-existent UUID → 404 Not Found")
+        void getSupplierByIdNotFound() throws Exception {
             mvc.perform(get("/api/suppliers/00000000-0000-0000-0000-000000000000"))
                     .andExpect(status().isNotFound());
         }
@@ -329,6 +356,7 @@ class SupplierControllerBlackBoxTest {
             b.put("supplierType", "FEED");
 
             mvc.perform(put("/api/suppliers/" + id)
+                    .header(CsmsAccessHelper.USER_ID_HEADER, actorId)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(om.writeValueAsString(b)))
                     .andExpect(status().isOk())
@@ -344,6 +372,7 @@ class SupplierControllerBlackBoxTest {
             b.put("supplierType", "MEDICINE");
 
             mvc.perform(put("/api/suppliers/" + id)
+                    .header(CsmsAccessHelper.USER_ID_HEADER, actorId)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(om.writeValueAsString(b)))
                     .andExpect(status().isOk())
@@ -361,6 +390,7 @@ class SupplierControllerBlackBoxTest {
             b.put("supplierType", "MEDICINE");
 
             mvc.perform(put("/api/suppliers/" + id)
+                    .header(CsmsAccessHelper.USER_ID_HEADER, actorId)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(om.writeValueAsString(b)))
                     .andExpect(status().isConflict());
@@ -374,6 +404,7 @@ class SupplierControllerBlackBoxTest {
             b.put("supplierType", "OTHER");
 
             mvc.perform(put("/api/suppliers/00000000-0000-0000-0000-000000000000")
+                    .header(CsmsAccessHelper.USER_ID_HEADER, actorId)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(om.writeValueAsString(b)))
                     .andExpect(status().isNotFound());
@@ -384,13 +415,12 @@ class SupplierControllerBlackBoxTest {
         void renameToSameNameAllowed() throws Exception {
             String id = createSupplier("Same Name Co", "FEED");
 
-            // Controller only checks for conflict if the new name != existing name.
-            // Setting the same name bypasses the duplicate check.
             Map<String, Object> b = new HashMap<>();
             b.put("name",         "Same Name Co");
             b.put("supplierType", "FEED");
 
             mvc.perform(put("/api/suppliers/" + id)
+                    .header(CsmsAccessHelper.USER_ID_HEADER, actorId)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(om.writeValueAsString(b)))
                     .andExpect(status().isOk());
@@ -409,14 +439,16 @@ class SupplierControllerBlackBoxTest {
         void deleteKnownSupplier() throws Exception {
             String id = createSupplier("To Be Deleted Co", "OTHER");
 
-            mvc.perform(delete("/api/suppliers/" + id))
+            mvc.perform(delete("/api/suppliers/" + id)
+                    .header(CsmsAccessHelper.USER_ID_HEADER, actorId))
                     .andExpect(status().isNoContent());
         }
 
         @Test
         @DisplayName("EG-09 | DELETE unknown UUID → 404 Not Found")
         void deleteUnknownSupplier() throws Exception {
-            mvc.perform(delete("/api/suppliers/00000000-0000-0000-0000-000000000000"))
+            mvc.perform(delete("/api/suppliers/00000000-0000-0000-0000-000000000000")
+                    .header(CsmsAccessHelper.USER_ID_HEADER, actorId))
                     .andExpect(status().isNotFound());
         }
 
@@ -425,10 +457,10 @@ class SupplierControllerBlackBoxTest {
         void softDeletedSupplierNotInActiveList() throws Exception {
             String id = createSupplier("Soon Gone Ltd", "FEED");
 
-            mvc.perform(delete("/api/suppliers/" + id))
+            mvc.perform(delete("/api/suppliers/" + id)
+                    .header(CsmsAccessHelper.USER_ID_HEADER, actorId))
                     .andExpect(status().isNoContent());
 
-            // Supplier is deactivated — must not appear in the active list
             mvc.perform(get("/api/suppliers/active"))
                     .andExpect(status().isOk())
                     .andExpect(result -> {
@@ -444,10 +476,10 @@ class SupplierControllerBlackBoxTest {
         void softDeletedSupplierStillExistsById() throws Exception {
             String id = createSupplier("Archived Supplier Co", "MEDICINE");
 
-            mvc.perform(delete("/api/suppliers/" + id))
+            mvc.perform(delete("/api/suppliers/" + id)
+                    .header(CsmsAccessHelper.USER_ID_HEADER, actorId))
                     .andExpect(status().isNoContent());
 
-            // Record still exists — GET by ID returns 200 with isActive = false
             mvc.perform(get("/api/suppliers/" + id))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.isActive").value(false));

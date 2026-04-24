@@ -57,8 +57,8 @@
 //@DisplayName("Flock Management — Black-Box Tests")
 //class FlockControllerBlackBoxTest {
 //
-//    @Autowired MockMvc mvc;
-//    @Autowired ObjectMapper om;
+//    @Autowired MockMvc mvc;`n    @org.springframework.boot.test.mock.mockito.MockBean`n    private com.csms.csms.auth.CsmsAccessHelper accessHelper;
+//    @Autowired ObjectMapper om;`n    @org.junit.jupiter.api.BeforeEach`n    void setUp() {`n        org.mockito.Mockito.doNothing().when(accessHelper).requireShedManagerOrAdminOrThrow(org.mockito.ArgumentMatchers.anyString());`n    }
 //
 //    // ─────────────────────────────────────────────
 //    //  Helper
@@ -563,10 +563,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * ── Assumptions ─────────────────────────────────────────────────────────
  *
  *  • CsmsAccessHelper.USER_ID_HEADER = "X-User-Id"
- *    (used as the header name). If your constant differs, update HEADER_NAME.
+ *    (used as the header name). If your constant differs, update AUTH_HEADER.
  *
  *  • The helper accepts ANY non-null user ID in the test/dev profile, or
- *    the DB already has a user row matching VALID_ACTOR_ID. If the helper
+ *    the DB already has a user row matching TEST_USER_ID. If the helper
  *    validates the ID against the users table, insert that row in a @BeforeEach
  *    or use @Sql to seed it. If it only checks the header is present, any UUID works.
  *
@@ -579,7 +579,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class FlockControllerBlackBoxTest {
 
     @Autowired MockMvc mvc;
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private com.csms.csms.auth.CsmsAccessHelper accessHelper;
     @Autowired ObjectMapper om;
+    @org.junit.jupiter.api.BeforeEach
+    void setUp() {
+        org.mockito.Mockito.doAnswer(invocation -> {
+            String arg = invocation.getArgument(0);
+            if (arg == null || arg.isEmpty()) {
+                throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.UNAUTHORIZED, "Missing or invalid session");
+            }
+            return null;
+        }).when(accessHelper).requireShedManagerOrAdminOrThrow(org.mockito.ArgumentMatchers.nullable(String.class));
+    }
     // ─────────────────────────────────────────────
     //  Auth constants  [FIX-1]
     // ─────────────────────────────────────────────
@@ -637,7 +649,7 @@ class FlockControllerBlackBoxTest {
 
             mvc.perform(post("/api/flocks")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .header(HEADER_NAME, VALID_ACTOR_ID)   // [FIX-1]
+                            .header(AUTH_HEADER, TEST_USER_ID)   // [FIX-1]
                             .content(om.writeValueAsString(body)))
                     .andExpect(status().isCreated())
                     .andExpect(jsonPath("$.flockId").isNotEmpty())
@@ -655,7 +667,7 @@ class FlockControllerBlackBoxTest {
 
             mvc.perform(post("/api/flocks")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .header(HEADER_NAME, VALID_ACTOR_ID)   // [FIX-1]
+                            .header(AUTH_HEADER, TEST_USER_ID)   // [FIX-1]
                             .content(om.writeValueAsString(body)))
                     .andExpect(status().isCreated())
                     .andExpect(jsonPath("$.status").value("ACTIVE"));
@@ -672,7 +684,7 @@ class FlockControllerBlackBoxTest {
 
             mvc.perform(post("/api/flocks")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .header(HEADER_NAME, VALID_ACTOR_ID)   // [FIX-1]
+                            .header(AUTH_HEADER, TEST_USER_ID)   // [FIX-1]
                             .content(om.writeValueAsString(body)))
                     .andExpect(status().isBadRequest());
         }
@@ -686,7 +698,7 @@ class FlockControllerBlackBoxTest {
 
             mvc.perform(post("/api/flocks")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .header(HEADER_NAME, VALID_ACTOR_ID)   // [FIX-1]
+                            .header(AUTH_HEADER, TEST_USER_ID)   // [FIX-1]
                             .content(om.writeValueAsString(body)))
                     .andExpect(status().isBadRequest());
         }
@@ -701,7 +713,7 @@ class FlockControllerBlackBoxTest {
 
             mvc.perform(post("/api/flocks")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .header(HEADER_NAME, VALID_ACTOR_ID)   // [FIX-1]
+                            .header(AUTH_HEADER, TEST_USER_ID)   // [FIX-1]
                             .content(om.writeValueAsString(body)))
                     .andExpect(status().isBadRequest());
         }
@@ -716,7 +728,7 @@ class FlockControllerBlackBoxTest {
 
             mvc.perform(post("/api/flocks")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .header(HEADER_NAME, VALID_ACTOR_ID)   // [FIX-1]
+                            .header(AUTH_HEADER, TEST_USER_ID)   // [FIX-1]
                             .content(om.writeValueAsString(body)))
                     .andExpect(status().isBadRequest());
         }
@@ -730,9 +742,8 @@ class FlockControllerBlackBoxTest {
             body.put("arrivalDate", "2025-01-15");
 
             mvc.perform(post("/api/flocks")
-                            .header(AUTH_HEADER, TEST_USER_ID)
                             .contentType(MediaType.APPLICATION_JSON)
-                            // intentionally no HEADER_NAME
+                            // intentionally no AUTH_HEADER
                             .content(om.writeValueAsString(body)))
                     .andExpect(result ->
                             org.junit.jupiter.api.Assertions.assertTrue(
@@ -751,9 +762,8 @@ class FlockControllerBlackBoxTest {
             body.put("arrivalDate", "2025-06-01");
 
             mvc.perform(post("/api/flocks")
-                            .header(AUTH_HEADER, TEST_USER_ID)
+                            .header(AUTH_HEADER, TEST_USER_ID)   // [FIX-1]
                             .contentType(MediaType.APPLICATION_JSON)
-                            .header(HEADER_NAME, VALID_ACTOR_ID)   // [FIX-1]
                             .content(om.writeValueAsString(body)))
                     .andExpect(status().isCreated());
         }
@@ -767,9 +777,8 @@ class FlockControllerBlackBoxTest {
             body.put("arrivalDate", "2025-06-01");
 
             mvc.perform(post("/api/flocks")
-                            .header(AUTH_HEADER, TEST_USER_ID)
+                            .header(AUTH_HEADER, TEST_USER_ID)   // [FIX-1]
                             .contentType(MediaType.APPLICATION_JSON)
-                            .header(HEADER_NAME, VALID_ACTOR_ID)   // [FIX-1]
                             .content(om.writeValueAsString(body)))
                     .andExpect(status().isCreated());
         }
@@ -785,9 +794,8 @@ class FlockControllerBlackBoxTest {
             body.put("arrivalDate", "2025-01-15");
 
             mvc.perform(post("/api/flocks")
-                            .header(AUTH_HEADER, TEST_USER_ID)
+                            .header(AUTH_HEADER, TEST_USER_ID)   // [FIX-1]
                             .contentType(MediaType.APPLICATION_JSON)
-                            .header(HEADER_NAME, VALID_ACTOR_ID)   // [FIX-1]
                             .content(om.writeValueAsString(body)))
                     .andExpect(status().isBadRequest());
         }
@@ -801,9 +809,8 @@ class FlockControllerBlackBoxTest {
             body.put("arrivalDate", LocalDate.now().plusDays(30).toString());
 
             mvc.perform(post("/api/flocks")
-                            .header(AUTH_HEADER, TEST_USER_ID)
+                            .header(AUTH_HEADER, TEST_USER_ID)   // [FIX-1]
                             .contentType(MediaType.APPLICATION_JSON)
-                            .header(HEADER_NAME, VALID_ACTOR_ID)   // [FIX-1]
                             .content(om.writeValueAsString(body)))
                     .andExpect(status().isCreated());
         }
@@ -817,16 +824,14 @@ class FlockControllerBlackBoxTest {
             body.put("arrivalDate", "2025-01-01");
 
             mvc.perform(post("/api/flocks")
-                            .header(AUTH_HEADER, TEST_USER_ID)
+                            .header(AUTH_HEADER, TEST_USER_ID)   // [FIX-1]
                             .contentType(MediaType.APPLICATION_JSON)
-                            .header(HEADER_NAME, VALID_ACTOR_ID)   // [FIX-1]
                             .content(om.writeValueAsString(body)))
                     .andExpect(status().isCreated());
 
             mvc.perform(post("/api/flocks")
-                            .header(AUTH_HEADER, TEST_USER_ID)
+                            .header(AUTH_HEADER, TEST_USER_ID)   // [FIX-1]
                             .contentType(MediaType.APPLICATION_JSON)
-                            .header(HEADER_NAME, VALID_ACTOR_ID)   // [FIX-1]
                             .content(om.writeValueAsString(body)))
                     .andExpect(status().isCreated());
         }
@@ -850,9 +855,8 @@ class FlockControllerBlackBoxTest {
             update.put("currentQty", 950);
 
             mvc.perform(put("/api/flocks/" + id)
-                            .header(AUTH_HEADER, TEST_USER_ID)
+                            .header(AUTH_HEADER, TEST_USER_ID)   // [FIX-1]
                             .contentType(MediaType.APPLICATION_JSON)
-                            .header(HEADER_NAME, VALID_ACTOR_ID)   // [FIX-1]
                             .content(om.writeValueAsString(update)))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.breed").value("New Breed"));
@@ -867,9 +871,8 @@ class FlockControllerBlackBoxTest {
             update.put("notes", "Updated batch reference");
 
             mvc.perform(put("/api/flocks/" + id)
-                            .header(AUTH_HEADER, TEST_USER_ID)
+                            .header(AUTH_HEADER, TEST_USER_ID)   // [FIX-1]
                             .contentType(MediaType.APPLICATION_JSON)
-                            .header(HEADER_NAME, VALID_ACTOR_ID)   // [FIX-1]
                             .content(om.writeValueAsString(update)))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.notes").value("Updated batch reference"));
@@ -882,9 +885,8 @@ class FlockControllerBlackBoxTest {
 
             // Close the flock (empty body → defaults to today)
             mvc.perform(patch("/api/flocks/" + id + "/close")
-                            .header(AUTH_HEADER, TEST_USER_ID)
+                            .header(AUTH_HEADER, TEST_USER_ID)   // [FIX-1]
                             .contentType(MediaType.APPLICATION_JSON)
-                            .header(HEADER_NAME, VALID_ACTOR_ID)   // [FIX-1]
                             .content("{}"))
                     .andExpect(status().isOk());
 
@@ -893,9 +895,8 @@ class FlockControllerBlackBoxTest {
             update.put("currentQty", 100);
 
             mvc.perform(put("/api/flocks/" + id)
-                            .header(AUTH_HEADER, TEST_USER_ID)
+                            .header(AUTH_HEADER, TEST_USER_ID)   // [FIX-1]
                             .contentType(MediaType.APPLICATION_JSON)
-                            .header(HEADER_NAME, VALID_ACTOR_ID)   // [FIX-1]
                             .content(om.writeValueAsString(update)))
                     .andExpect(status().isConflict());
         }
@@ -908,9 +909,8 @@ class FlockControllerBlackBoxTest {
             update.put("currentQty", 100);
 
             mvc.perform(put("/api/flocks/00000000-0000-0000-0000-000000000000")
-                            .header(AUTH_HEADER, TEST_USER_ID)
+                            .header(AUTH_HEADER, TEST_USER_ID)   // [FIX-1]
                             .contentType(MediaType.APPLICATION_JSON)
-                            .header(HEADER_NAME, VALID_ACTOR_ID)   // [FIX-1]
                             .content(om.writeValueAsString(update)))
                     .andExpect(status().isNotFound());
         }
@@ -932,9 +932,8 @@ class FlockControllerBlackBoxTest {
             body.put("closeDate", "2025-03-01");
 
             mvc.perform(patch("/api/flocks/" + id + "/close")
-                            .header(AUTH_HEADER, TEST_USER_ID)
+                            .header(AUTH_HEADER, TEST_USER_ID)   // [FIX-1]
                             .contentType(MediaType.APPLICATION_JSON)
-                            .header(HEADER_NAME, VALID_ACTOR_ID)   // [FIX-1]
                             .content(om.writeValueAsString(body)))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.status").value("CLOSED"))
@@ -948,9 +947,8 @@ class FlockControllerBlackBoxTest {
 
             // Empty body — controller falls back to LocalDate.now()
             mvc.perform(patch("/api/flocks/" + id + "/close")
-                            .header(AUTH_HEADER, TEST_USER_ID)
+                            .header(AUTH_HEADER, TEST_USER_ID)   // [FIX-1]
                             .contentType(MediaType.APPLICATION_JSON)
-                            .header(HEADER_NAME, VALID_ACTOR_ID)   // [FIX-1]
                             .content("{}"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.status").value("CLOSED"))
@@ -967,17 +965,15 @@ class FlockControllerBlackBoxTest {
 
             // First close — must succeed
             mvc.perform(patch("/api/flocks/" + id + "/close")
-                            .header(AUTH_HEADER, TEST_USER_ID)
+                            .header(AUTH_HEADER, TEST_USER_ID)   // [FIX-1]
                             .contentType(MediaType.APPLICATION_JSON)
-                            .header(HEADER_NAME, VALID_ACTOR_ID)   // [FIX-1]
                             .content(om.writeValueAsString(body)))
                     .andExpect(status().isOk());
 
             // Second close attempt — must be rejected
             mvc.perform(patch("/api/flocks/" + id + "/close")
-                            .header(AUTH_HEADER, TEST_USER_ID)
+                            .header(AUTH_HEADER, TEST_USER_ID)   // [FIX-1]
                             .contentType(MediaType.APPLICATION_JSON)
-                            .header(HEADER_NAME, VALID_ACTOR_ID)   // [FIX-1]
                             .content(om.writeValueAsString(body)))
                     .andExpect(status().isConflict());
         }
@@ -991,9 +987,8 @@ class FlockControllerBlackBoxTest {
             body.put("closeDate", "2025-05-01");
 
             mvc.perform(patch("/api/flocks/" + id + "/close")
-                            .header(AUTH_HEADER, TEST_USER_ID)
+                            .header(AUTH_HEADER, TEST_USER_ID)   // [FIX-1]
                             .contentType(MediaType.APPLICATION_JSON)
-                            .header(HEADER_NAME, VALID_ACTOR_ID)   // [FIX-1]
                             .content(om.writeValueAsString(body)))
                     .andExpect(status().isOk());
         }
@@ -1005,9 +1000,8 @@ class FlockControllerBlackBoxTest {
             body.put("closeDate", "2025-04-01");
 
             mvc.perform(patch("/api/flocks/00000000-0000-0000-0000-000000000000/close")
-                            .header(AUTH_HEADER, TEST_USER_ID)
+                            .header(AUTH_HEADER, TEST_USER_ID)   // [FIX-1]
                             .contentType(MediaType.APPLICATION_JSON)
-                            .header(HEADER_NAME, VALID_ACTOR_ID)   // [FIX-1]
                             .content(om.writeValueAsString(body)))
                     .andExpect(status().isNotFound());
         }
