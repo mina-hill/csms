@@ -134,7 +134,7 @@ public class MedicineController {
     // ===== MEDICINE PURCHASES (/api/medicine/purchases) =====
 
     @PostMapping("/api/medicine/purchases")
-    public ResponseEntity<?> createPurchase(@RequestBody MedicinePurchaseRequest request) {
+    public ResponseEntity<?> createPurchase(@RequestBody MedicinePurchaseReq request) {
         UUID medicineId = request.getMedicineId();
         if (medicineId == null && request.getMedicineName() != null
                 && !request.getMedicineName().isBlank()) {
@@ -218,7 +218,7 @@ public class MedicineController {
     // ===== MEDICINE USAGE (/api/medicine/usage) =====
 
     @PostMapping("/api/medicine/usage")
-    public ResponseEntity<?> createUsage(@RequestBody MedicineUsageRequest request) {
+    public ResponseEntity<?> createUsage(@RequestBody MedicineUsageReq request) {
         if (request.getFlockId() == null || request.getMedicineId() == null
                 || request.getUsageDate() == null || request.getDosage() == null) {
             return ResponseEntity.badRequest().body(Map.of(
@@ -317,7 +317,7 @@ class MedicineStockAdjustRequest {
     public void setUnit(String unit) { this.unit = unit; }
 }
 
-class MedicinePurchaseRequest {
+class MedicinePurchaseReq {
     private UUID medicineId;
     private String medicineName;
     private UUID supplierId;
@@ -345,7 +345,7 @@ class MedicinePurchaseRequest {
     public void setRecordedBy(UUID recordedBy) { this.recordedBy = recordedBy; }
 }
 
-class MedicineUsageRequest {
+class MedicineUsageReq {
     private UUID flockId;
     private UUID medicineId;
     @JsonAlias("usage_date")

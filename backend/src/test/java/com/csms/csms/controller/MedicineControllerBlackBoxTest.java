@@ -1,5 +1,6 @@
 package com.csms.csms.controller;
 
+import com.csms.csms.auth.CsmsAccessHelper;
 import com.csms.csms.entity.Medicine;
 import com.csms.csms.entity.MedicinePurchase;
 import com.csms.csms.entity.MedicineUsage;
@@ -56,6 +57,9 @@ class MedicineControllerBlackBoxTest {
     @Mock
     private SupplierRepository supplierRepository;
 
+    @Mock
+    private CsmsAccessHelper accessHelper;
+
     @InjectMocks
     private MedicineController medicineController;
 
@@ -86,7 +90,7 @@ class MedicineControllerBlackBoxTest {
         savedMedicine.setMedicineId(medicineId);
         when(medicineRepository.save(any(Medicine.class))).thenReturn(savedMedicine);
 
-        ResponseEntity<?> response = medicineController.upsertMedicine(request);
+        ResponseEntity<?> response = medicineController.upsertMedicine(request, "test-user-id");
 
         assertEquals(HttpStatus.CREATED, response.getStatusCode());
         assertNotNull(response.getBody());
@@ -105,7 +109,7 @@ class MedicineControllerBlackBoxTest {
         when(medicineRepository.findByName("Paracetamol")).thenReturn(Optional.of(existing));
         when(medicineRepository.save(any(Medicine.class))).thenReturn(existing);
 
-        ResponseEntity<?> response = medicineController.upsertMedicine(request);
+        ResponseEntity<?> response = medicineController.upsertMedicine(request, "test-user-id");
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals(15, existing.getMinThreshold());
@@ -117,7 +121,7 @@ class MedicineControllerBlackBoxTest {
         MedicineUpsertRequest request = new MedicineUpsertRequest();
         request.setName(null);
 
-        ResponseEntity<?> response = medicineController.upsertMedicine(request);
+        ResponseEntity<?> response = medicineController.upsertMedicine(request, "test-user-id");
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         assertTrue(response.getBody().toString().contains("name is required"));
@@ -129,7 +133,7 @@ class MedicineControllerBlackBoxTest {
         MedicineUpsertRequest request = new MedicineUpsertRequest();
         request.setName("   ");
 
-        ResponseEntity<?> response = medicineController.upsertMedicine(request);
+        ResponseEntity<?> response = medicineController.upsertMedicine(request, "test-user-id");
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
     }
@@ -146,7 +150,7 @@ class MedicineControllerBlackBoxTest {
         savedMedicine.setMedicineId(medicineId);
         when(medicineRepository.save(any(Medicine.class))).thenReturn(savedMedicine);
 
-        ResponseEntity<?> response = medicineController.upsertMedicine(request);
+        ResponseEntity<?> response = medicineController.upsertMedicine(request, "test-user-id");
 
         assertEquals(HttpStatus.CREATED, response.getStatusCode());
     }
@@ -163,7 +167,7 @@ class MedicineControllerBlackBoxTest {
         savedMedicine.setMedicineId(medicineId);
         when(medicineRepository.save(any(Medicine.class))).thenReturn(savedMedicine);
 
-        ResponseEntity<?> response = medicineController.upsertMedicine(request);
+        ResponseEntity<?> response = medicineController.upsertMedicine(request, "test-user-id");
 
         assertEquals(HttpStatus.CREATED, response.getStatusCode());
     }
@@ -183,7 +187,7 @@ class MedicineControllerBlackBoxTest {
         when(medicineRepository.findByName("Ciprofloxacin")).thenReturn(Optional.of(medicine));
         when(medicineRepository.save(any(Medicine.class))).thenReturn(medicine);
 
-        ResponseEntity<?> response = medicineController.adjustStock(request);
+        ResponseEntity<?> response = medicineController.adjustStock(request, "test-user-id");
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals(15, medicine.getCurrentStock());
@@ -202,7 +206,7 @@ class MedicineControllerBlackBoxTest {
         when(medicineRepository.findByName("Tetracycline")).thenReturn(Optional.of(medicine));
         when(medicineRepository.save(any(Medicine.class))).thenReturn(medicine);
 
-        ResponseEntity<?> response = medicineController.adjustStock(request);
+        ResponseEntity<?> response = medicineController.adjustStock(request, "test-user-id");
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals(7, medicine.getCurrentStock());
@@ -215,7 +219,7 @@ class MedicineControllerBlackBoxTest {
         request.setName("Metronidazole");
         request.setDelta(0);
 
-        ResponseEntity<?> response = medicineController.adjustStock(request);
+        ResponseEntity<?> response = medicineController.adjustStock(request, "test-user-id");
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         assertTrue(response.getBody().toString().contains("delta must be non-zero"));
@@ -232,7 +236,7 @@ class MedicineControllerBlackBoxTest {
         medicine.setCurrentStock(10);
         when(medicineRepository.findByName("Doxycycline")).thenReturn(Optional.of(medicine));
 
-        ResponseEntity<?> response = medicineController.adjustStock(request);
+        ResponseEntity<?> response = medicineController.adjustStock(request, "test-user-id");
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         assertTrue(response.getBody().toString().contains("Insufficient medicine stock"));
@@ -245,7 +249,7 @@ class MedicineControllerBlackBoxTest {
         request.setName("");
         request.setDelta(5);
 
-        ResponseEntity<?> response = medicineController.adjustStock(request);
+        ResponseEntity<?> response = medicineController.adjustStock(request, "test-user-id");
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
     }
@@ -257,7 +261,7 @@ class MedicineControllerBlackBoxTest {
         request.setName("Clarithromycin");
         request.setDelta(null);
 
-        ResponseEntity<?> response = medicineController.adjustStock(request);
+        ResponseEntity<?> response = medicineController.adjustStock(request, "test-user-id");
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
     }
@@ -297,7 +301,7 @@ class MedicineControllerBlackBoxTest {
     @Test
     @DisplayName("EP: Create purchase with valid medicine ID and supplier")
     void testCreatePurchaseValidMedicineAndSupplier() {
-        MedicinePurchaseRequest request = new MedicinePurchaseRequest();
+        MedicinePurchaseReq request = new MedicinePurchaseReq();
         request.setMedicineId(medicineId);
         request.setSupplierId(supplierId);
         request.setPurchaseDate(LocalDate.now());
@@ -318,7 +322,7 @@ class MedicineControllerBlackBoxTest {
     @Test
     @DisplayName("EP: Create purchase with medicine name (no ID)")
     void testCreatePurchaseWithMedicineNameLookup() {
-        MedicinePurchaseRequest request = new MedicinePurchaseRequest();
+        MedicinePurchaseReq request = new MedicinePurchaseReq();
         request.setMedicineName("Streptomycin");
         request.setSupplierId(supplierId);
         request.setPurchaseDate(LocalDate.now());
@@ -341,7 +345,7 @@ class MedicineControllerBlackBoxTest {
     @Test
     @DisplayName("BVA: Create purchase - quantity = 1 (boundary)")
     void testCreatePurchaseQuantityOne() {
-        MedicinePurchaseRequest request = new MedicinePurchaseRequest();
+        MedicinePurchaseReq request = new MedicinePurchaseReq();
         request.setMedicineId(medicineId);
         request.setSupplierId(supplierId);
         request.setPurchaseDate(LocalDate.now());
@@ -361,7 +365,7 @@ class MedicineControllerBlackBoxTest {
     @Test
     @DisplayName("BVA: Create purchase - quantity = 0 (invalid)")
     void testCreatePurchaseQuantityZero() {
-        MedicinePurchaseRequest request = new MedicinePurchaseRequest();
+        MedicinePurchaseReq request = new MedicinePurchaseReq();
         request.setMedicineId(medicineId);
         request.setSupplierId(supplierId);
         request.setPurchaseDate(LocalDate.now());
@@ -377,7 +381,7 @@ class MedicineControllerBlackBoxTest {
     @Test
     @DisplayName("BVA: Create purchase - unitCost = 0 (invalid)")
     void testCreatePurchaseUnitCostZero() {
-        MedicinePurchaseRequest request = new MedicinePurchaseRequest();
+        MedicinePurchaseReq request = new MedicinePurchaseReq();
         request.setMedicineId(medicineId);
         request.setSupplierId(supplierId);
         request.setPurchaseDate(LocalDate.now());
@@ -393,7 +397,7 @@ class MedicineControllerBlackBoxTest {
     @Test
     @DisplayName("EG: Create purchase - missing supplier ID")
     void testCreatePurchaseMissingSupplier() {
-        MedicinePurchaseRequest request = new MedicinePurchaseRequest();
+        MedicinePurchaseReq request = new MedicinePurchaseReq();
         request.setMedicineId(medicineId);
         request.setSupplierId(null);
         request.setPurchaseDate(LocalDate.now());
@@ -409,7 +413,7 @@ class MedicineControllerBlackBoxTest {
     @Test
     @DisplayName("EG: Create purchase - medicine not found")
     void testCreatePurchaseMedicineNotFound() {
-        MedicinePurchaseRequest request = new MedicinePurchaseRequest();
+        MedicinePurchaseReq request = new MedicinePurchaseReq();
         request.setMedicineId(medicineId);
         request.setSupplierId(supplierId);
         request.setPurchaseDate(LocalDate.now());
@@ -429,7 +433,7 @@ class MedicineControllerBlackBoxTest {
     @Test
     @DisplayName("EP: Create usage with valid flock, medicine, and dosage")
     void testCreateUsageSuccess() {
-        MedicineUsageRequest request = new MedicineUsageRequest();
+        MedicineUsageReq request = new MedicineUsageReq();
         request.setFlockId(flockId);
         request.setMedicineId(medicineId);
         request.setUsageDate(LocalDate.now());
@@ -447,7 +451,7 @@ class MedicineControllerBlackBoxTest {
     @Test
     @DisplayName("BVA: Create usage - dosage = 0 (invalid)")
     void testCreateUsageDosageZero() {
-        MedicineUsageRequest request = new MedicineUsageRequest();
+        MedicineUsageReq request = new MedicineUsageReq();
         request.setFlockId(flockId);
         request.setMedicineId(medicineId);
         request.setUsageDate(LocalDate.now());
@@ -463,7 +467,7 @@ class MedicineControllerBlackBoxTest {
     @Test
     @DisplayName("BVA: Create usage - negative dosage (invalid)")
     void testCreateUsageNegativeDosage() {
-        MedicineUsageRequest request = new MedicineUsageRequest();
+        MedicineUsageReq request = new MedicineUsageReq();
         request.setFlockId(flockId);
         request.setMedicineId(medicineId);
         request.setUsageDate(LocalDate.now());
@@ -478,7 +482,7 @@ class MedicineControllerBlackBoxTest {
     @Test
     @DisplayName("EG: Create usage - missing usage time")
     void testCreateUsageMissingUsageTime() {
-        MedicineUsageRequest request = new MedicineUsageRequest();
+        MedicineUsageReq request = new MedicineUsageReq();
         request.setFlockId(flockId);
         request.setMedicineId(medicineId);
         request.setUsageDate(LocalDate.now());
@@ -494,7 +498,7 @@ class MedicineControllerBlackBoxTest {
     @Test
     @DisplayName("EG: Create usage - blank usage time")
     void testCreateUsageBlankUsageTime() {
-        MedicineUsageRequest request = new MedicineUsageRequest();
+        MedicineUsageReq request = new MedicineUsageReq();
         request.setFlockId(flockId);
         request.setMedicineId(medicineId);
         request.setUsageDate(LocalDate.now());
@@ -509,7 +513,7 @@ class MedicineControllerBlackBoxTest {
     @Test
     @DisplayName("EG: Create usage - missing flock ID")
     void testCreateUsageMissingFlockId() {
-        MedicineUsageRequest request = new MedicineUsageRequest();
+        MedicineUsageReq request = new MedicineUsageReq();
         request.setFlockId(null);
         request.setMedicineId(medicineId);
         request.setUsageDate(LocalDate.now());

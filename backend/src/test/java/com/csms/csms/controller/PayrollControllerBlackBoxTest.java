@@ -1,5 +1,6 @@
 package com.csms.csms.controller;
 
+import com.csms.csms.auth.CsmsAccessHelper;
 import com.csms.csms.entity.SalaryPayment;
 import com.csms.csms.entity.Worker;
 import com.csms.csms.repository.SalaryPaymentRepository;
@@ -50,6 +51,9 @@ class PayrollControllerBlackBoxTest {
     @Mock
     private SalaryPaymentRepository salaryPaymentRepository;
 
+    @Mock
+    private CsmsAccessHelper accessHelper;
+
     @InjectMocks
     private PayrollController payrollController;
 
@@ -85,7 +89,7 @@ class PayrollControllerBlackBoxTest {
                 .thenReturn(Optional.empty());
         when(salaryPaymentRepository.save(any(SalaryPayment.class))).thenReturn(savedPayment);
 
-        ResponseEntity<?> response = payrollController.processPayroll(request);
+        ResponseEntity<?> response = payrollController.processPayroll(request, "test-user-id");
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertNotNull(response.getBody());
@@ -108,7 +112,7 @@ class PayrollControllerBlackBoxTest {
                 .thenReturn(Optional.of(existingPayment));
         when(salaryPaymentRepository.save(any(SalaryPayment.class))).thenReturn(existingPayment);
 
-        ResponseEntity<?> response = payrollController.processPayroll(request);
+        ResponseEntity<?> response = payrollController.processPayroll(request, "test-user-id");
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
     }
@@ -127,7 +131,7 @@ class PayrollControllerBlackBoxTest {
                 .thenReturn(Optional.empty());
         when(salaryPaymentRepository.save(any(SalaryPayment.class))).thenReturn(savedPayment);
 
-        ResponseEntity<?> response = payrollController.processPayroll(request);
+        ResponseEntity<?> response = payrollController.processPayroll(request, "test-user-id");
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals(1, ((PayrollReportItem) response.getBody()).getDaysWorked());
@@ -148,7 +152,7 @@ class PayrollControllerBlackBoxTest {
                 .thenReturn(Optional.empty());
         when(salaryPaymentRepository.save(any(SalaryPayment.class))).thenReturn(savedPayment);
 
-        ResponseEntity<?> response = payrollController.processPayroll(request);
+        ResponseEntity<?> response = payrollController.processPayroll(request, "test-user-id");
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
     }
@@ -170,7 +174,7 @@ class PayrollControllerBlackBoxTest {
                 .thenReturn(Optional.empty());
         when(salaryPaymentRepository.save(any(SalaryPayment.class))).thenReturn(savedPayment);
 
-        ResponseEntity<?> response = payrollController.processPayroll(request);
+        ResponseEntity<?> response = payrollController.processPayroll(request, "test-user-id");
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
     }
@@ -192,7 +196,7 @@ class PayrollControllerBlackBoxTest {
                 .thenReturn(Optional.empty());
         when(salaryPaymentRepository.save(any(SalaryPayment.class))).thenReturn(savedPayment);
 
-        ResponseEntity<?> response = payrollController.processPayroll(request);
+        ResponseEntity<?> response = payrollController.processPayroll(request, "test-user-id");
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
     }
@@ -204,7 +208,7 @@ class PayrollControllerBlackBoxTest {
         request.setWorkerId("not-a-valid-uuid");
         request.setEndDate(LocalDate.of(2024, 5, 31));
 
-        ResponseEntity<?> response = payrollController.processPayroll(request);
+        ResponseEntity<?> response = payrollController.processPayroll(request, "test-user-id");
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         assertTrue(response.getBody().toString().contains("valid UUID"));
@@ -217,7 +221,7 @@ class PayrollControllerBlackBoxTest {
         request.setWorkerId(null);
         request.setEndDate(LocalDate.of(2024, 5, 31));
 
-        ResponseEntity<?> response = payrollController.processPayroll(request);
+        ResponseEntity<?> response = payrollController.processPayroll(request, "test-user-id");
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         assertTrue(response.getBody().toString().contains("required"));
@@ -230,7 +234,7 @@ class PayrollControllerBlackBoxTest {
         request.setWorkerId(workerId.toString());
         request.setEndDate(null);
 
-        ResponseEntity<?> response = payrollController.processPayroll(request);
+        ResponseEntity<?> response = payrollController.processPayroll(request, "test-user-id");
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         assertTrue(response.getBody().toString().contains("required"));
@@ -245,7 +249,7 @@ class PayrollControllerBlackBoxTest {
 
         when(workerRepository.findById(workerId)).thenReturn(Optional.empty());
 
-        ResponseEntity<?> response = payrollController.processPayroll(request);
+        ResponseEntity<?> response = payrollController.processPayroll(request, "test-user-id");
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         assertTrue(response.getBody().toString().contains("missing or inactive"));
@@ -264,7 +268,7 @@ class PayrollControllerBlackBoxTest {
 
         when(workerRepository.findById(workerId)).thenReturn(Optional.of(inactiveWorker));
 
-        ResponseEntity<?> response = payrollController.processPayroll(request);
+        ResponseEntity<?> response = payrollController.processPayroll(request, "test-user-id");
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         assertTrue(response.getBody().toString().contains("missing or inactive"));
@@ -283,7 +287,7 @@ class PayrollControllerBlackBoxTest {
 
         when(workerRepository.findById(workerId)).thenReturn(Optional.of(noJoinDate));
 
-        ResponseEntity<?> response = payrollController.processPayroll(request);
+        ResponseEntity<?> response = payrollController.processPayroll(request, "test-user-id");
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         assertTrue(response.getBody().toString().contains("joinDate"));
@@ -298,7 +302,7 @@ class PayrollControllerBlackBoxTest {
 
         when(workerRepository.findById(workerId)).thenReturn(Optional.of(activeWorker));
 
-        ResponseEntity<?> response = payrollController.processPayroll(request);
+        ResponseEntity<?> response = payrollController.processPayroll(request, "test-user-id");
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         assertTrue(response.getBody().toString().contains("on or after"));
@@ -321,7 +325,7 @@ class PayrollControllerBlackBoxTest {
                 .thenReturn(Optional.empty());
         when(salaryPaymentRepository.save(any(SalaryPayment.class))).thenReturn(savedPayment);
 
-        ResponseEntity<?> response = payrollController.processPayroll(request);
+        ResponseEntity<?> response = payrollController.processPayroll(request, "test-user-id");
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         // Verify daily rate is rounded correctly (to 2 decimal places)
@@ -341,7 +345,7 @@ class PayrollControllerBlackBoxTest {
                 .thenReturn(Optional.empty());
         when(salaryPaymentRepository.save(any(SalaryPayment.class))).thenReturn(savedPayment);
 
-        ResponseEntity<?> response = payrollController.processPayroll(request);
+        ResponseEntity<?> response = payrollController.processPayroll(request, "test-user-id");
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
     }
@@ -517,3 +521,4 @@ class PayrollControllerBlackBoxTest {
         assertTrue(response.getBody().size() >= 1);
     }
 }
+
