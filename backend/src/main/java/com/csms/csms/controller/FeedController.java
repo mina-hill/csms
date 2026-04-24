@@ -1,5 +1,6 @@
 package com.csms.csms.controller;
 
+import com.csms.csms.auth.CsmsAccessHelper;
 import com.csms.csms.entity.FeedPurchase;
 import com.csms.csms.entity.FeedUsage;
 import com.csms.csms.entity.FeedSale;
@@ -38,6 +39,9 @@ public class FeedController {
     @Autowired
     private SupplierRepository supplierRepository;
 
+    @Autowired
+    private CsmsAccessHelper accessHelper;
+
     // ===== FEED TYPES =====
 
     @GetMapping("/types")
@@ -53,7 +57,10 @@ public class FeedController {
     // ===== PURCHASES =====
 
     @PostMapping("/purchases")
-    public ResponseEntity<?> createPurchase(@RequestBody FeedPurchaseRequest request) {
+    public ResponseEntity<?> createPurchase(
+            @RequestBody FeedPurchaseRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireFinancialOrThrow(actorId);
         if (request.getFeedTypeId() == null) {
             return ResponseEntity.badRequest().body(Map.of("error", "feedTypeId is required"));
         }
@@ -118,7 +125,10 @@ public class FeedController {
     // ===== USAGE =====
 
     @PostMapping("/usage")
-    public ResponseEntity<?> createUsage(@RequestBody FeedUsageRequest request) {
+    public ResponseEntity<?> createUsage(
+            @RequestBody FeedUsageRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireFinancialOrThrow(actorId);
         if (request.getFlockId() == null) {
             return ResponseEntity.badRequest().body(Map.of("error", "flockId is required"));
         }
@@ -205,7 +215,10 @@ public class FeedController {
     // ===== SALES =====
 
     @PostMapping("/sales")
-    public ResponseEntity<FeedSale> createSale(@RequestBody FeedSaleRequest request) {
+    public ResponseEntity<FeedSale> createSale(
+            @RequestBody FeedSaleRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireFinancialOrThrow(actorId);
        FeedSale sale = new FeedSale(
     request.getSaleDate(),
     request.getSacksQty(),

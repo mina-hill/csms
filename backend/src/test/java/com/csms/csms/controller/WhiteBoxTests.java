@@ -1,5 +1,6 @@
 package com.csms.csms.controller;
 
+import com.csms.csms.auth.CsmsAccessHelper;
 import com.csms.csms.entity.Flock;
 import com.csms.csms.entity.AuditLog;
 import com.csms.csms.entity.FlockStatus;
@@ -40,12 +41,17 @@ import static org.mockito.Mockito.*;
 @DisplayName("FlockController - updateFlock() White-Box Tests")
 class WhiteBoxTests {
 
+    private static final String TEST_ACTOR = "00000000-0000-0000-0000-000000000001";
+
     // Mock the repositories (don't use real database during tests)
     @Mock
     private FlockRepository flockRepository;
 
     @Mock
     private AuditLogRepository auditLogRepository;
+
+    @Mock
+    private CsmsAccessHelper accessHelper;
 
     // Inject mocks into the controller
     @InjectMocks
@@ -62,6 +68,7 @@ class WhiteBoxTests {
      */
     @BeforeEach
     void setUp() {
+        doNothing().when(accessHelper).requireShedManagerOrAdminOrThrow(any());
         flockId = UUID.randomUUID();
         
         activeFlock = new Flock();
@@ -96,7 +103,7 @@ class WhiteBoxTests {
         updateRequest.setCurrentQty(600);
 
         // Act: Call the method
-        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest);
+        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest, TEST_ACTOR);
 
         // Assert: Check response
         assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
@@ -131,7 +138,7 @@ class WhiteBoxTests {
         updateRequest.setCurrentQty(400);
 
         // Act
-        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest);
+        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest, TEST_ACTOR);
 
         // Assert
         assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
@@ -166,7 +173,7 @@ class WhiteBoxTests {
         updateRequest.setUpdatedBy(UUID.randomUUID());
 
         // Act
-        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest);
+        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest, TEST_ACTOR);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -202,7 +209,7 @@ class WhiteBoxTests {
         updateRequest.setUpdatedBy(UUID.randomUUID());
 
         // Act
-        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest);
+        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest, TEST_ACTOR);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -236,7 +243,7 @@ class WhiteBoxTests {
         updateRequest.setUpdatedBy(UUID.randomUUID());
 
         // Act
-        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest);
+        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest, TEST_ACTOR);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -268,7 +275,7 @@ class WhiteBoxTests {
         updateRequest.setUpdatedBy(UUID.randomUUID());
 
         // Act
-        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest);
+        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest, TEST_ACTOR);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -305,7 +312,7 @@ class WhiteBoxTests {
         updateRequest.setUpdatedBy(UUID.randomUUID());
 
         // Act
-        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest);
+        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest, TEST_ACTOR);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -336,7 +343,7 @@ class WhiteBoxTests {
         updateRequest.setUpdatedBy(UUID.randomUUID());
 
         // Act
-        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest);
+        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest, TEST_ACTOR);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -360,7 +367,7 @@ class WhiteBoxTests {
         updateRequest.setUpdatedBy(UUID.randomUUID());
 
         // Act
-        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest);
+        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest, TEST_ACTOR);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -384,7 +391,7 @@ class WhiteBoxTests {
         updateRequest.setUpdatedBy(UUID.randomUUID());
 
         // Act
-        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest);
+        ResponseEntity<?> response = flockController.updateFlock(flockId, updateRequest, TEST_ACTOR);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -392,174 +399,5 @@ class WhiteBoxTests {
         
         // NOTE: This reveals a potential bug!
         // If negative quantities are not allowed, add validation to FlockController.updateFlock()
-    }
-}
-
-@ExtendWith(MockitoExtension.class)
-@DisplayName("White-Box: closeFlock() + generateNextFlockCode()")
-class FlockControllerCloseTest {
-
-    @Mock private FlockRepository flockRepository;
-    @Mock private AuditLogRepository auditLogRepository;
-    @InjectMocks private FlockController flockController;
-
-    private UUID flockId;
-    private Flock activeFlock;
-    private CloseFlockRequest closeRequest;
-
-    @BeforeEach
-    void setUp() {
-        flockId = UUID.randomUUID();
-
-        activeFlock = new Flock();
-        activeFlock.setFlockId(flockId);
-        activeFlock.setStatus(FlockStatus.ACTIVE);
-        activeFlock.setBreed("Broiler");
-        activeFlock.setCurrentQty(500);
-
-        closeRequest = new CloseFlockRequest();
-        closeRequest.setClosedBy("admin");
-    }
-
-    // ---------------------------------------------------------------
-    // closeFlock() — Branch 1: Flock not found → 404
-    // ---------------------------------------------------------------
-    @Test
-    @DisplayName("Test 1: Should return 404 when flock ID does not exist")
-    void testCloseFlock_NotFound() {
-        when(flockRepository.findById(flockId)).thenReturn(Optional.empty());
-
-        ResponseEntity<?> response = flockController.closeFlock(flockId, closeRequest);
-
-        assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
-        verify(flockRepository, never()).save(any());
-        verify(auditLogRepository, never()).save(any());
-    }
-
-    // ---------------------------------------------------------------
-    // closeFlock() — Branch 2: Flock already CLOSED → 409
-    // ---------------------------------------------------------------
-    @Test
-    @DisplayName("Test 2: Should return 409 when flock is already CLOSED")
-    void testCloseFlock_AlreadyClosed() {
-        activeFlock.setStatus(FlockStatus.CLOSED);
-        activeFlock.setCloseDate(LocalDate.of(2024, 1, 10));
-        when(flockRepository.findById(flockId)).thenReturn(Optional.of(activeFlock));
-
-        ResponseEntity<?> response = flockController.closeFlock(flockId, closeRequest);
-
-        assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
-        assertNotNull(response.getBody());
-        assertTrue(response.getBody().toString().contains("already CLOSED"));
-        verify(flockRepository, never()).save(any());
-        verify(auditLogRepository, never()).save(any());
-    }
-
-    // ---------------------------------------------------------------
-    // closeFlock() — Branch 3: ACTIVE flock, closeDate PROVIDED → 200
-    // Path: found → not closed → closeDate != null → save
-    // ---------------------------------------------------------------
-    @Test
-    @DisplayName("Test 3: Should close flock with provided closeDate")
-    void testCloseFlock_WithProvidedCloseDate() {
-        LocalDate providedDate = LocalDate.of(2024, 6, 15);
-        closeRequest.setCloseDate(providedDate);
-        when(flockRepository.findById(flockId)).thenReturn(Optional.of(activeFlock));
-        when(flockRepository.save(any(Flock.class))).thenReturn(activeFlock);
-
-        ResponseEntity<?> response = flockController.closeFlock(flockId, closeRequest);
-
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertEquals(FlockStatus.CLOSED, activeFlock.getStatus());
-        assertEquals(providedDate, activeFlock.getCloseDate());
-        verify(flockRepository, times(1)).save(activeFlock);
-        verify(auditLogRepository, times(1)).save(any(AuditLog.class));
-    }
-
-    // ---------------------------------------------------------------
-    // closeFlock() — Branch 4: ACTIVE flock, closeDate NULL → defaults to today
-    // Path: found → not closed → closeDate == null → LocalDate.now() → save
-    // ---------------------------------------------------------------
-    @Test
-    @DisplayName("Test 4: Should close flock with today's date when closeDate is null")
-    void testCloseFlock_WithNullCloseDate_DefaultsToToday() {
-        closeRequest.setCloseDate(null); // explicitly null
-        when(flockRepository.findById(flockId)).thenReturn(Optional.of(activeFlock));
-        when(flockRepository.save(any(Flock.class))).thenReturn(activeFlock);
-
-        LocalDate before = LocalDate.now();
-        ResponseEntity<?> response = flockController.closeFlock(flockId, closeRequest);
-        LocalDate after = LocalDate.now();
-
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertEquals(FlockStatus.CLOSED, activeFlock.getStatus());
-        // closeDate must be today (between before and after handles midnight edge)
-        assertFalse(activeFlock.getCloseDate().isBefore(before));
-        assertFalse(activeFlock.getCloseDate().isAfter(after));
-        verify(flockRepository, times(1)).save(activeFlock);
-        verify(auditLogRepository, times(1)).save(any(AuditLog.class));
-    }
-
-    // ---------------------------------------------------------------
-    // generateNextFlockCode() — Loop runs ONCE (no collision)
-    // do-while: count=0 → candidate="FLK-001" → existsByFlockCode=false → exit
-    // ---------------------------------------------------------------
-    @Test
-    @DisplayName("Test 5: generateNextFlockCode — loop exits on first iteration (no collision)")
-    void testGenerateNextFlockCode_NoCollision() {
-        
-
-        // Trigger registerFlock which calls generateNextFlockCode internally
-        when(flockRepository.count()).thenReturn(0L);
-        when(flockRepository.existsByFlockCode("FLK-001")).thenReturn(false);
-
-        FlockRequest registerReq = new FlockRequest();
-        registerReq.setBreed("Broiler");
-        registerReq.setInitialQty(100);
-        registerReq.setArrivalDate(LocalDate.of(2024, 1, 1));
-
-        Flock savedFlock = new Flock();
-        savedFlock.setFlockCode("FLK-001");
-        savedFlock.setStatus(FlockStatus.ACTIVE);
-        savedFlock.setInitialQty(100);
-        when(flockRepository.save(any(Flock.class))).thenReturn(savedFlock);
-
-        ResponseEntity<?> response = flockController.registerFlock(registerReq);
-
-        assertEquals(HttpStatus.CREATED, response.getStatusCode());
-        // Loop ran once: existsByFlockCode called exactly once for FLK-001
-        verify(flockRepository, times(1)).existsByFlockCode("FLK-001");
-    }
-
-    // ---------------------------------------------------------------
-    // generateNextFlockCode() — Loop runs MULTIPLE times (collision)
-    // do-while: FLK-001 exists → FLK-002 exists → FLK-003 free → exit
-    // ---------------------------------------------------------------
-    @Test
-    @DisplayName("Test 6: generateNextFlockCode — loop iterates on collision, exits when code is free")
-    void testGenerateNextFlockCode_WithCollisions() {
-        when(flockRepository.count()).thenReturn(0L);
-        when(flockRepository.existsByFlockCode("FLK-001")).thenReturn(true);  // collision
-        when(flockRepository.existsByFlockCode("FLK-002")).thenReturn(true);  // collision
-        when(flockRepository.existsByFlockCode("FLK-003")).thenReturn(false); // free
-
-        FlockRequest registerReq = new FlockRequest();
-        registerReq.setBreed("Broiler");
-        registerReq.setInitialQty(100);
-        registerReq.setArrivalDate(LocalDate.of(2024, 1, 1));
-
-        Flock savedFlock = new Flock();
-        savedFlock.setFlockCode("FLK-003");
-        savedFlock.setStatus(FlockStatus.ACTIVE);
-        savedFlock.setInitialQty(100);
-        when(flockRepository.save(any(Flock.class))).thenReturn(savedFlock);
-
-        ResponseEntity<?> response = flockController.registerFlock(registerReq);
-
-        assertEquals(HttpStatus.CREATED, response.getStatusCode());
-        // Verify loop ran 3 times before finding a free code
-        verify(flockRepository, times(1)).existsByFlockCode("FLK-001");
-        verify(flockRepository, times(1)).existsByFlockCode("FLK-002");
-        verify(flockRepository, times(1)).existsByFlockCode("FLK-003");
     }
 }

@@ -1,5 +1,6 @@
 package com.csms.csms.controller;
 
+import com.csms.csms.auth.CsmsAccessHelper;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.csms.csms.entity.Medicine;
 import com.csms.csms.entity.MedicinePurchase;
@@ -36,6 +37,9 @@ public class MedController {
     @Autowired
     private SupplierRepository supplierRepository;
 
+    @Autowired
+    private CsmsAccessHelper accessHelper;
+
     // ===== MEDICINES =====
 
     @GetMapping("/types")
@@ -51,7 +55,10 @@ public class MedController {
     // ===== PURCHASES =====
 
     @PostMapping("/purchases")
-    public ResponseEntity<?> createPurchase(@RequestBody MedicinePurchaseRequest request) {
+    public ResponseEntity<?> createPurchase(
+            @RequestBody MedicinePurchaseRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireFinancialOrThrow(actorId);
         UUID medicineId = request.getMedicineId();
         if (medicineId == null
                 && request.getMedicineName() != null
@@ -136,7 +143,10 @@ public class MedController {
     // ===== USAGE =====
 
     @PostMapping("/usage")
-    public ResponseEntity<?> createUsage(@RequestBody MedicineUsageRequest request) {
+    public ResponseEntity<?> createUsage(
+            @RequestBody MedicineUsageRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireFinancialOrThrow(actorId);
         if (request.getFlockId() == null || request.getMedicineId() == null
                 || request.getRecordDate() == null || request.getDosage() == null) {
             return ResponseEntity.badRequest().body(Map.of(

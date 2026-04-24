@@ -1,5 +1,6 @@
 package com.csms.csms.controller;
 
+import com.csms.csms.auth.CsmsAccessHelper;
 import com.csms.csms.entity.Medicine;
 import com.csms.csms.repository.MedicineRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,6 +20,9 @@ public class MedicineController {
     @Autowired
     private MedicineRepository medicineRepository;
 
+    @Autowired
+    private CsmsAccessHelper accessHelper;
+
     @GetMapping
     public ResponseEntity<List<Medicine>> getAllMedicines() {
         return ResponseEntity.ok(medicineRepository.findAllByOrderByNameAsc());
@@ -33,7 +37,10 @@ public class MedicineController {
     }
 
     @PostMapping("/upsert")
-    public ResponseEntity<?> upsertMedicine(@RequestBody MedicineUpsertRequest request) {
+    public ResponseEntity<?> upsertMedicine(
+            @RequestBody MedicineUpsertRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireShedManagerOrAdminOrThrow(actorId);
         if (request.getName() == null || request.getName().isBlank()) {
             return ResponseEntity.badRequest().body("name is required.");
         }
@@ -55,7 +62,11 @@ public class MedicineController {
     }
 
     @PatchMapping("/{id}/threshold")
-    public ResponseEntity<?> updateThreshold(@PathVariable UUID id, @RequestBody MedicineThresholdRequest request) {
+    public ResponseEntity<?> updateThreshold(
+            @PathVariable UUID id,
+            @RequestBody MedicineThresholdRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireShedManagerOrAdminOrThrow(actorId);
         if (request.getMinThreshold() == null || request.getMinThreshold() < 0) {
             return ResponseEntity.badRequest().body("minThreshold must be >= 0.");
         }
@@ -68,7 +79,10 @@ public class MedicineController {
     }
 
     @PatchMapping("/stock")
-    public ResponseEntity<?> adjustStock(@RequestBody MedicineStockAdjustRequest request) {
+    public ResponseEntity<?> adjustStock(
+            @RequestBody MedicineStockAdjustRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireShedManagerOrAdminOrThrow(actorId);
         if (request.getName() == null || request.getName().isBlank()) {
             return ResponseEntity.badRequest().body("name is required.");
         }

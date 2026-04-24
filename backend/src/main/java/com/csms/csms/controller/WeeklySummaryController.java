@@ -1,5 +1,6 @@
 package com.csms.csms.controller;
 
+import com.csms.csms.auth.CsmsAccessHelper;
 import com.csms.csms.entity.AuditLog;
 import com.csms.csms.entity.DailyMortality;
 import com.csms.csms.entity.WeeklySummary;
@@ -61,6 +62,9 @@ public class WeeklySummaryController {
     @Qualifier("auditLogRepository")
     private AuditLogRepository systemAuditLog;
 
+    @Autowired
+    private CsmsAccessHelper accessHelper;
+
     // ── GET ───────────────────────────────────────────────────────────────────
 
     /** GET /api/weekly-summary — all snapshots (for testing / dashboard) */
@@ -80,8 +84,10 @@ public class WeeklySummaryController {
     // ── POST (upsert) ─────────────────────────────────────────────────────────
 
     @PostMapping
-    public ResponseEntity<?> saveWeeklySummary(@RequestBody WeeklySummaryRequest req) {
-
+    public ResponseEntity<?> saveWeeklySummary(
+            @RequestBody WeeklySummaryRequest req,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireShedManagerOrAdminOrThrow(actorId);
         if (req.getFlockId() == null || req.getWeekNumber() == null
                 || req.getWeekEndDate() == null) {
             return ResponseEntity.badRequest()

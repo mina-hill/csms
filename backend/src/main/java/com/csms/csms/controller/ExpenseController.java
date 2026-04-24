@@ -1,5 +1,6 @@
 package com.csms.csms.controller;
 
+import com.csms.csms.auth.CsmsAccessHelper;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.csms.csms.entity.Expense;
@@ -25,12 +26,18 @@ public class ExpenseController {
     @Autowired
     private ExpenseRepository expenseRepository;
 
+    @Autowired
+    private CsmsAccessHelper accessHelper;
+
     /**
      * POST /api/expenses
      * US-026: Record an expense.
      */
     @PostMapping
-    public ResponseEntity<?> createExpense(@RequestBody ExpenseRequest request) {
+    public ResponseEntity<?> createExpense(
+            @RequestBody ExpenseRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireFinancialOrThrow(actorId);
         if (request.getCategory() == null) {
             return ResponseEntity.badRequest().body(Map.of("error", "category is required"));
         }
@@ -97,7 +104,11 @@ public class ExpenseController {
      * PUT /api/expenses/{id}
      */
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateExpense(@PathVariable UUID id, @RequestBody ExpenseRequest request) {
+    public ResponseEntity<?> updateExpense(
+            @PathVariable UUID id,
+            @RequestBody ExpenseRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireFinancialOrThrow(actorId);
         return expenseRepository.findById(id)
                 .map(expense -> {
                     if (request.getCategory() != null) expense.setCategory(request.getCategory());
@@ -114,7 +125,10 @@ public class ExpenseController {
      * DELETE /api/expenses/{id}
      */
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteExpense(@PathVariable UUID id) {
+    public ResponseEntity<Void> deleteExpense(
+            @PathVariable UUID id,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireFinancialOrThrow(actorId);
         if (expenseRepository.existsById(id)) {
             expenseRepository.deleteById(id);
             return ResponseEntity.noContent().build();

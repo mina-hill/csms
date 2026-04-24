@@ -1,5 +1,6 @@
 package com.csms.csms.controller;
 
+import com.csms.csms.auth.CsmsAccessHelper;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.csms.csms.entity.FeedSale;
 import com.csms.csms.entity.Flock;
@@ -45,6 +46,9 @@ public class SalesController {
     @Autowired
     private FlockRepository flockRepository;
 
+    @Autowired
+    private CsmsAccessHelper accessHelper;
+
     // ===== FLOCK SALES =====
 
     /**
@@ -53,7 +57,10 @@ public class SalesController {
      * FIX-7: Returns 400 if required fields are missing or invalid.
      */
     @PostMapping("/flock")
-    public ResponseEntity<?> createFlockSale(@RequestBody FlockSaleRequest request) {
+    public ResponseEntity<?> createFlockSale(
+            @RequestBody FlockSaleRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireFinancialOrThrow(actorId);
         // FIX-7: Input validation
         if (request.getFlockId() == null) {
             return ResponseEntity.badRequest().body(Map.of("error", "flockId is required"));
@@ -165,7 +172,10 @@ public class SalesController {
      * FIX-9: description is NOT NULL in SQL — validated before save.
      */
     @PostMapping("/other")
-    public ResponseEntity<?> createOtherSale(@RequestBody SalesOtherSaleRequest request) {
+    public ResponseEntity<?> createOtherSale(
+            @RequestBody SalesOtherSaleRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireFinancialOrThrow(actorId);
         // FIX-9: description is NOT NULL in the other_sales table
         if (request.getDescription() == null || request.getDescription().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "description is required"));
