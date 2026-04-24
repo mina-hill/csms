@@ -1,5 +1,6 @@
 package com.csms.csms.controller;
 
+import com.csms.csms.auth.CsmsAccessHelper;
 import com.csms.csms.entity.AuditLog;
 import com.csms.csms.entity.Flock;
 import com.csms.csms.entity.FlockStatus;
@@ -32,6 +33,9 @@ public class FlockController {
     @Qualifier("auditLogRepository")
     private AuditLogRepository auditLogRepository;
 
+    @Autowired
+    private CsmsAccessHelper accessHelper;
+
     @GetMapping
     public ResponseEntity<List<Flock>> getAllFlocks() {
         return ResponseEntity.ok(flockRepository.findAll());
@@ -57,6 +61,10 @@ public class FlockController {
     }
 
     @PostMapping
+    public ResponseEntity<?> registerFlock(
+            @Valid @RequestBody FlockRequest req,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireShedManagerOrAdminOrThrow(actorId);
     public ResponseEntity<?> registerFlock(@Valid @RequestBody FlockRequest req) {
         String code = generateNextFlockCode();
 
@@ -86,8 +94,11 @@ public class FlockController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateFlock(@PathVariable UUID id,
-                                         @RequestBody FlockRequest req) {
+    public ResponseEntity<?> updateFlock(
+            @PathVariable UUID id,
+            @RequestBody FlockRequest req,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireShedManagerOrAdminOrThrow(actorId);
         Optional<Flock> existing = flockRepository.findById(id);
         if (existing.isEmpty()) return ResponseEntity.notFound().build();
 
@@ -126,8 +137,11 @@ public class FlockController {
     }
 
     @PatchMapping("/{id}/close")
-    public ResponseEntity<?> closeFlock(@PathVariable UUID id,
-                                        @RequestBody CloseFlockRequest req) {
+    public ResponseEntity<?> closeFlock(
+            @PathVariable UUID id,
+            @RequestBody CloseFlockRequest req,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireShedManagerOrAdminOrThrow(actorId);
         Optional<Flock> existing = flockRepository.findById(id);
         if (existing.isEmpty()) return ResponseEntity.notFound().build();
 

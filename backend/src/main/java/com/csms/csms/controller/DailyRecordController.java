@@ -1,5 +1,6 @@
 package com.csms.csms.controller;
 
+import com.csms.csms.auth.CsmsAccessHelper;
 import com.csms.csms.entity.AuditLog;
 import com.csms.csms.entity.DailyMortality;
 import com.csms.csms.entity.FlockStatus;
@@ -48,6 +49,9 @@ public class DailyRecordController {
     @Qualifier("auditLogRepository")
     private AuditLogRepository systemAuditLog;
 
+    @Autowired
+    private CsmsAccessHelper accessHelper;
+
     // ── MORTALITY ─────────────────────────────────────────────────────────────
 
     /** GET /api/mortality — all records (for testing / dashboard) */
@@ -73,8 +77,10 @@ public class DailyRecordController {
      * The trigger itself is the final guard; we pre-check to return clean 409s.
      */
     @PostMapping("/mortality")
-    public ResponseEntity<?> recordMortality(@RequestBody MortalityRequest req) {
-
+    public ResponseEntity<?> recordMortality(
+            @RequestBody MortalityRequest req,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireShedManagerOrAdminOrThrow(actorId);
         if (req.getFlockId() == null || req.getRecordDate() == null
                 || req.getCount() == null || req.getShift() == null) {
             return ResponseEntity.badRequest()
@@ -188,8 +194,10 @@ public class DailyRecordController {
      *  - record_date must not be in the future
      */
     @PostMapping("/weights")
-    public ResponseEntity<?> recordWeight(@RequestBody WeightRequest req) {
-
+    public ResponseEntity<?> recordWeight(
+            @RequestBody WeightRequest req,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireShedManagerOrAdminOrThrow(actorId);
         if (req.getFlockId() == null || req.getWeekNumber() == null
                 || req.getRecordDate() == null || req.getAvgWeightKg() == null) {
             return ResponseEntity.badRequest()

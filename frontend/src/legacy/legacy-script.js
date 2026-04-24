@@ -32,8 +32,28 @@ var editTarget=null, closeTarget=null, viewTarget=null, supEditTarget=null, work
 var EDITOR = 'Shed Manager';
 var API_BASE = '/api';
 
+function getCsmsUser(){
+  try { return JSON.parse(sessionStorage.getItem('csms_user') || 'null'); }
+  catch (e) { return null; }
+}
+function isAccountantSession(){
+  var u = getCsmsUser();
+  return u && String(u.role || '').toUpperCase() === 'ACCOUNTANT';
+}
+
 function api(path, opts){
-  return fetch(API_BASE + path, opts || {});
+  opts = opts || {};
+  var h = new Headers();
+  if (opts.headers) {
+    if (opts.headers instanceof Headers) {
+      opts.headers.forEach(function(v, k) { h.set(k, v); });
+    } else {
+      Object.keys(opts.headers).forEach(function(k) { h.set(k, opts.headers[k]); });
+    }
+  }
+  var u = getCsmsUser();
+  if (u && u.userId) h.set('X-CSMS-User-Id', u.userId);
+  return fetch(API_BASE + path, Object.assign({}, opts, { headers: h }));
 }
 
 // ════════════════════════════════════════════════════
@@ -769,6 +789,55 @@ document.querySelectorAll('.nav-item').forEach(function(btn){
     }else if(render[v])render[v]();
   });
 });
+
+// Role-based nav (shed manager vs accountant) and top bar
+var ACCOUNTANT_VIEWS = { expenses: 1, payroll: 1, reports: 1, sales: 1, feed: 1, medicine: 1, brada: 1, suppliers: 1 };
+function applyRoleBasedUI(){
+  var u = getCsmsUser();
+  if (!u) return;
+  EDITOR = u.username || EDITOR;
+  var role = String(u.role || '').toUpperCase();
+  var av = document.getElementById('user-av');
+  var un = document.getElementById('user-name');
+  var ur = document.getElementById('user-role');
+  var name = u.username || 'User';
+  if (un) un.textContent = name;
+  if (av) {
+    var parts = name.replace(/[^a-zA-Z0-9 ]/g, ' ').trim().split(/\s+/);
+    var ab = (parts[0] ? parts[0][0] : 'U') + (parts[1] ? parts[1][0] : '');
+    av.textContent = ab ? ab.toUpperCase().slice(0, 2) : 'U';
+  }
+  if (ur) {
+    if (role === 'ACCOUNTANT') ur.textContent = 'Accountant';
+    else if (role === 'MANAGER') ur.textContent = 'Shed manager';
+    else if (role === 'ADMIN') ur.textContent = 'Admin';
+    else ur.textContent = role || '';
+  }
+  if (role === 'ACCOUNTANT') {
+    document.querySelectorAll('.nav-item').forEach(function(btn) {
+      var v = btn.getAttribute('data-view');
+      if (!ACCOUNTANT_VIEWS[v]) btn.classList.add('nav-item-hidden');
+    });
+    document.querySelectorAll('.view').forEach(function(v) { v.classList.remove('on'); });
+    document.querySelectorAll('.nav-item').forEach(function(b) { b.classList.remove('on'); });
+    var rBtn = document.querySelector('.nav-item[data-view="reports"]');
+    var rView = document.getElementById('view-reports');
+    if (rBtn && rView) {
+      rBtn.classList.add('on');
+      rView.classList.add('on');
+      rBtn.click();
+    }
+  }
+  var lo = document.getElementById('btn-csms-logout');
+  if (lo) {
+    lo.addEventListener('click', function() {
+      sessionStorage.removeItem('csms_user');
+      window.location.reload();
+    });
+  }
+}
+applyRoleBasedUI();
+
 document.addEventListener('click',function(e){
   var cb=e.target.closest('[data-close]');if(cb){closeM(cb.getAttribute('data-close'));return;}
   if(e.target.classList.contains('overlay'))closeM(e.target.id);
@@ -2900,9 +2969,14 @@ function buildFeedReport(){
 // ════════════════════════════════════════════════════
 bindSupplierWorkerDelegation();
 loadInitialData().then(function(){
-  renderDash();
+  if (isAccountantSession()) {
+    var t = (document.querySelector('.tab-pill.on[data-rtab]') && document.querySelector('.tab-pill.on[data-rtab]').getAttribute('data-rtab')) || 'mortality';
+    if (typeof renderReport === 'function') renderReport(t);
+  } else {
+    renderDash();
+  }
   renderSuppliers();
   renderPayroll();
-  // Pre-set report tab
-  document.querySelector('[data-rtab="mortality"]').classList.add('on');
+  var mortTab = document.querySelector('[data-rtab="mortality"]');
+  if (mortTab) mortTab.classList.add('on');
 });

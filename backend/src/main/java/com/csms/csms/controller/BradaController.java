@@ -1,5 +1,6 @@
 package com.csms.csms.controller;
 
+import com.csms.csms.auth.CsmsAccessHelper;
 import com.csms.csms.entity.BradaPurchase;
 import com.csms.csms.repository.BradaPurchaseRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,10 +22,16 @@ public class BradaController {
     @Autowired
     private BradaPurchaseRepository bradaPurchaseRepository;
 
+    @Autowired
+    private CsmsAccessHelper accessHelper;
+
     // ===== PURCHASES =====
 
     @PostMapping("/purchases")
-    public ResponseEntity<?> createPurchase(@RequestBody BradaPurchaseRequest request) {
+    public ResponseEntity<?> createPurchase(
+            @RequestBody BradaPurchaseRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireFinancialOrThrow(actorId);
         if (request.getFlockId() == null) {
             return ResponseEntity.badRequest().body(java.util.Map.of("error", "flockId is required"));
         }

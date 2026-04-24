@@ -1,5 +1,6 @@
 package com.csms.csms.controller;
 
+import com.csms.csms.auth.CsmsAccessHelper;
 import com.csms.csms.entity.Worker;
 import com.csms.csms.repository.WorkerRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,6 +21,9 @@ public class WorkerController {
 
     @Autowired
     private WorkerRepository workerRepository;
+
+    @Autowired
+    private CsmsAccessHelper accessHelper;
 
     @GetMapping
     public ResponseEntity<List<Worker>> getAllWorkers() {
@@ -49,7 +53,10 @@ public class WorkerController {
     }
 
     @PostMapping
-    public ResponseEntity<Worker> createWorker(@RequestBody WorkerRequest request) {
+    public ResponseEntity<Worker> createWorker(
+            @RequestBody WorkerRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireShedManagerOrAdminOrThrow(actorId);
         if (request.getName() == null || request.getName().isBlank()) return ResponseEntity.badRequest().build();
         if (request.getRole() == null || request.getRole().isBlank()) return ResponseEntity.badRequest().build();
         if (request.getJoinDate() == null) return ResponseEntity.badRequest().build();
@@ -69,7 +76,11 @@ public class WorkerController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Worker> updateWorker(@PathVariable UUID id, @RequestBody WorkerRequest request) {
+    public ResponseEntity<Worker> updateWorker(
+            @PathVariable UUID id,
+            @RequestBody WorkerRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireShedManagerOrAdminOrThrow(actorId);
         Optional<Worker> existingWorker = workerRepository.findById(id);
         if (existingWorker.isEmpty()) return ResponseEntity.notFound().build();
 
@@ -88,7 +99,10 @@ public class WorkerController {
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteWorker(@PathVariable UUID id) {
+    public ResponseEntity<Void> deleteWorker(
+            @PathVariable UUID id,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireShedManagerOrAdminOrThrow(actorId);
         Optional<Worker> worker = workerRepository.findById(id);
         if (worker.isEmpty()) return ResponseEntity.notFound().build();
 

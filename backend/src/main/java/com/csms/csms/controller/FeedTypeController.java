@@ -1,5 +1,6 @@
 package com.csms.csms.controller;
 
+import com.csms.csms.auth.CsmsAccessHelper;
 import com.csms.csms.entity.FeedType;
 import com.csms.csms.repository.FeedTypeRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,6 +20,9 @@ public class FeedTypeController {
     @Autowired
     private FeedTypeRepository feedTypeRepository;
 
+    @Autowired
+    private CsmsAccessHelper accessHelper;
+
     @GetMapping
     public ResponseEntity<List<FeedType>> getAllFeedTypes() {
         return ResponseEntity.ok(feedTypeRepository.findAllByOrderByNameAsc());
@@ -33,7 +37,10 @@ public class FeedTypeController {
     }
 
     @PostMapping("/upsert")
-    public ResponseEntity<?> upsertFeedType(@RequestBody FeedTypeUpsertRequest request) {
+    public ResponseEntity<?> upsertFeedType(
+            @RequestBody FeedTypeUpsertRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireShedManagerOrAdminOrThrow(actorId);
         if (request.getName() == null || request.getName().isBlank()) {
             return ResponseEntity.badRequest().body("name is required.");
         }
@@ -52,7 +59,11 @@ public class FeedTypeController {
     }
 
     @PatchMapping("/{id}/threshold")
-    public ResponseEntity<?> updateThreshold(@PathVariable UUID id, @RequestBody FeedThresholdRequest request) {
+    public ResponseEntity<?> updateThreshold(
+            @PathVariable UUID id,
+            @RequestBody FeedThresholdRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireShedManagerOrAdminOrThrow(actorId);
         if (request.getMinThreshold() == null || request.getMinThreshold() < 0) {
             return ResponseEntity.badRequest().body("minThreshold must be >= 0.");
         }
@@ -65,7 +76,10 @@ public class FeedTypeController {
     }
 
     @PatchMapping("/stock")
-    public ResponseEntity<?> adjustStock(@RequestBody FeedStockAdjustRequest request) {
+    public ResponseEntity<?> adjustStock(
+            @RequestBody FeedStockAdjustRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireShedManagerOrAdminOrThrow(actorId);
         if (request.getName() == null || request.getName().isBlank()) {
             return ResponseEntity.badRequest().body("name is required.");
         }

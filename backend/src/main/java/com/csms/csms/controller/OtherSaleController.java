@@ -1,5 +1,6 @@
 package com.csms.csms.controller;
 
+import com.csms.csms.auth.CsmsAccessHelper;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.csms.csms.entity.OtherSale;
 import com.csms.csms.entity.OtherSaleCategory;
@@ -24,6 +25,9 @@ public class OtherSaleController {
     @Autowired
     private OtherSaleRepository otherSaleRepository;
 
+    @Autowired
+    private CsmsAccessHelper accessHelper;
+
     @GetMapping
     public ResponseEntity<List<OtherSale>> getOtherSales(
             @RequestParam(required = false) LocalDate startDate,
@@ -43,7 +47,10 @@ public class OtherSaleController {
     }
 
     @PostMapping
-    public ResponseEntity<?> createOtherSale(@RequestBody OtherSaleRequest request) {
+    public ResponseEntity<?> createOtherSale(
+            @RequestBody OtherSaleRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireFinancialOrThrow(actorId);
         if (request.getSaleDate() == null) return ResponseEntity.badRequest().body("saleDate is required.");
         OtherSaleCategory normalizedCategory = request.getCategoryEnum();
         if (normalizedCategory == null) return ResponseEntity.badRequest().body("category is required.");
@@ -65,7 +72,11 @@ public class OtherSaleController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateOtherSale(@PathVariable java.util.UUID id, @RequestBody OtherSaleRequest request) {
+    public ResponseEntity<?> updateOtherSale(
+            @PathVariable java.util.UUID id,
+            @RequestBody OtherSaleRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireFinancialOrThrow(actorId);
         return otherSaleRepository.findById(id).map(existing -> {
             if (request.getSaleDate() != null) existing.setSaleDate(request.getSaleDate());
             if (request.getCategoryEnum() != null) existing.setCategory(request.getCategoryEnum());

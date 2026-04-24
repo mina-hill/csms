@@ -1,5 +1,6 @@
 package com.csms.csms.controller;
 
+import com.csms.csms.auth.CsmsAccessHelper;
 import com.csms.csms.entity.SalaryPayment;
 import com.csms.csms.entity.Worker;
 import com.csms.csms.repository.SalaryPaymentRepository;
@@ -30,8 +31,14 @@ public class PayrollController {
     @Autowired
     private SalaryPaymentRepository salaryPaymentRepository;
 
+    @Autowired
+    private CsmsAccessHelper accessHelper;
+
     @PostMapping("/process")
-    public ResponseEntity<?> processPayroll(@RequestBody PayrollProcessRequest request) {
+    public ResponseEntity<?> processPayroll(
+            @RequestBody PayrollProcessRequest request,
+            @RequestHeader(value = CsmsAccessHelper.USER_ID_HEADER, required = false) String actorId) {
+        accessHelper.requireFinancialOrThrow(actorId);
         if (request.getWorkerId() == null || request.getEndDate() == null) {
             return ResponseEntity.badRequest().body("workerId and endDate are required.");
         }
