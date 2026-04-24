@@ -16,6 +16,12 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+
+
 @RestController
 @RequestMapping("/api/flocks")
 @CrossOrigin(origins = "*")
@@ -51,7 +57,7 @@ public class FlockController {
     }
 
     @PostMapping
-    public ResponseEntity<?> registerFlock(@RequestBody FlockRequest req) {
+    public ResponseEntity<?> registerFlock(@Valid @RequestBody FlockRequest req) {
         String code = generateNextFlockCode();
 
         Flock flock = new Flock(
@@ -167,40 +173,49 @@ public class FlockController {
 }
 
 class FlockRequest {
-    private String    breed;
-    private Integer   initialQty;
-    private Integer   currentQty;
+
+    @NotBlank(message = "Breed is required")
+    private String breed;
+
+    @NotNull(message = "Initial quantity is required")
+    @Min(value = 1, message = "Initial quantity must be greater than 0")
+    private Integer initialQty;
+
+    private Integer currentQty;
+
+    @NotNull(message = "Arrival date is required")
     private LocalDate arrivalDate;
-    private UUID      supplierId;
-    private String    notes;
-    private UUID      createdBy;
-    private UUID      updatedBy;
+
+    private UUID supplierId;
+    private String notes;
+    private UUID createdBy;
+    private UUID updatedBy;
 
     public FlockRequest() {}
 
-    public String    getBreed()          { return breed; }
-    public void      setBreed(String v)  { this.breed = v; }
+    public String getBreed() { return breed; }
+    public void setBreed(String v) { this.breed = v; }
 
-    public Integer   getInitialQty()           { return initialQty; }
-    public void      setInitialQty(Integer v)  { this.initialQty = v; }
+    public Integer getInitialQty() { return initialQty; }
+    public void setInitialQty(Integer v) { this.initialQty = v; }
 
-    public Integer   getCurrentQty()           { return currentQty; }
-    public void      setCurrentQty(Integer v)  { this.currentQty = v; }
+    public Integer getCurrentQty() { return currentQty; }
+    public void setCurrentQty(Integer v) { this.currentQty = v; }
 
-    public LocalDate getArrivalDate()              { return arrivalDate; }
-    public void      setArrivalDate(LocalDate v)   { this.arrivalDate = v; }
+    public LocalDate getArrivalDate() { return arrivalDate; }
+    public void setArrivalDate(LocalDate v) { this.arrivalDate = v; }
 
-    public UUID      getSupplierId()         { return supplierId; }
-    public void      setSupplierId(UUID v)   { this.supplierId = v; }
+    public UUID getSupplierId() { return supplierId; }
+    public void setSupplierId(UUID v) { this.supplierId = v; }
 
-    public String    getNotes()          { return notes; }
-    public void      setNotes(String v)  { this.notes = v; }
+    public String getNotes() { return notes; }
+    public void setNotes(String v) { this.notes = v; }
 
-    public UUID      getCreatedBy()        { return createdBy; }
-    public void      setCreatedBy(UUID v)  { this.createdBy = v; }
+    public UUID getCreatedBy() { return createdBy; }
+    public void setCreatedBy(UUID v) { this.createdBy = v; }
 
-    public UUID      getUpdatedBy()        { return updatedBy; }
-    public void      setUpdatedBy(UUID v)  { this.updatedBy = v; }
+    public UUID getUpdatedBy() { return updatedBy; }
+    public void setUpdatedBy(UUID v) { this.updatedBy = v; }
 }
 
 class CloseFlockRequest {
