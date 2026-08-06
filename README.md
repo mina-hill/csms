@@ -64,10 +64,10 @@ flowchart LR
     style API fill:#6db33f11,stroke:#6db33f,color:#ffffff
     style DB fill:#4169e122,stroke:#4169e1,color:#ffffff
 
-    classDef sec fill:#e34948,stroke:#8a1f1f,stroke-width:2px,color:#ffffff
-    classDef ctrl fill:#2a78d6,stroke:#184f95,stroke-width:2px,color:#ffffff
-    classDef svc fill:#eda100,stroke:#8a6200,stroke-width:2px,color:#ffffff
-    classDef repo fill:#1baf7a,stroke:#0f7a52,stroke-width:2px,color:#ffffff
+    classDef sec fill:#C44E52,stroke:#8C3336,stroke-width:2px,color:#ffffff
+    classDef ctrl fill:#4C72B0,stroke:#2E4670,stroke-width:2px,color:#ffffff
+    classDef svc fill:#C9A227,stroke:#7A6418,stroke-width:2px,color:#ffffff
+    classDef repo fill:#4C9F8A,stroke:#2F6455,stroke-width:2px,color:#ffffff
     class SEC sec
     class CTRL ctrl
     class SVC svc
