@@ -30,7 +30,10 @@ A full-stack web application for managing day-to-day operations of a poultry far
 ## Project at a Glance
 
 <div align="center">
-<img src="docs/charts/entities-by-module.png" alt="Domain entities by module: Reporting Views 8, Flock 6, Feed 4, Expenses & Sales 4, Supplier & Procurement 3, Access & Audit 3, Medicine 3, Payroll 2" width="640" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/charts/entities-by-module-dark.png">
+  <img src="docs/charts/entities-by-module.png" alt="Domain entities by module: Reporting Views 8, Flock 6, Feed 4, Expenses & Sales 4, Supplier & Procurement 3, Access & Audit 3, Medicine 3, Payroll 2" width="640" />
+</picture>
 </div>
 
 ## Architecture
@@ -57,14 +60,14 @@ flowchart LR
     SPA -- "HTTPS / JSON (fetch)" --> SEC
     REPO -- "JDBC" --> DB
 
-    style Client fill:#61dafb22,stroke:#61dafb
-    style API fill:#6db33f11,stroke:#6db33f
-    style DB fill:#4169e122,stroke:#4169e1
+    style Client fill:#61dafb22,stroke:#61dafb,color:#ffffff
+    style API fill:#6db33f11,stroke:#6db33f,color:#ffffff
+    style DB fill:#4169e122,stroke:#4169e1,color:#ffffff
 
-    classDef sec fill:#e344481a,stroke:#e34948,stroke-width:2px,color:#0b0b0b
-    classDef ctrl fill:#2a78d61a,stroke:#2a78d6,stroke-width:2px,color:#0b0b0b
-    classDef svc fill:#eda1001a,stroke:#eda100,stroke-width:2px,color:#0b0b0b
-    classDef repo fill:#1baf7a1a,stroke:#1baf7a,stroke-width:2px,color:#0b0b0b
+    classDef sec fill:#e34948,stroke:#8a1f1f,stroke-width:2px,color:#ffffff
+    classDef ctrl fill:#2a78d6,stroke:#184f95,stroke-width:2px,color:#ffffff
+    classDef svc fill:#eda100,stroke:#8a6200,stroke-width:2px,color:#ffffff
+    classDef repo fill:#1baf7a,stroke:#0f7a52,stroke-width:2px,color:#ffffff
     class SEC sec
     class CTRL ctrl
     class SVC svc
