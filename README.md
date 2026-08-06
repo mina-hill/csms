@@ -27,6 +27,12 @@ A full-stack web application for managing day-to-day operations of a poultry far
 
 ---
 
+## Project at a Glance
+
+<div align="center">
+<img src="docs/charts/entities-by-module.png" alt="Domain entities by module: Reporting Views 8, Flock 6, Feed 4, Expenses & Sales 4, Supplier & Procurement 3, Access & Audit 3, Medicine 3, Payroll 2" width="640" />
+</div>
+
 ## Architecture
 
 The frontend is a single-page React app that talks to a Spring Boot REST API, which in turn persists through a layered service/repository stack onto a PostgreSQL database hosted on Supabase.
@@ -52,8 +58,17 @@ flowchart LR
     REPO -- "JDBC" --> DB
 
     style Client fill:#61dafb22,stroke:#61dafb
-    style API fill:#6db33f22,stroke:#6db33f
+    style API fill:#6db33f11,stroke:#6db33f
     style DB fill:#4169e122,stroke:#4169e1
+
+    classDef sec fill:#e344481a,stroke:#e34948,stroke-width:2px,color:#0b0b0b
+    classDef ctrl fill:#2a78d61a,stroke:#2a78d6,stroke-width:2px,color:#0b0b0b
+    classDef svc fill:#eda1001a,stroke:#eda100,stroke-width:2px,color:#0b0b0b
+    classDef repo fill:#1baf7a1a,stroke:#1baf7a,stroke-width:2px,color:#0b0b0b
+    class SEC sec
+    class CTRL ctrl
+    class SVC svc
+    class REPO repo
 ```
 
 > A live PostgreSQL instance is required. Connection details (URL, username, password) are configured in `backend/src/main/resources/application.properties` — no credentials are reproduced here or anywhere in this README.
